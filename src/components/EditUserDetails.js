@@ -9,7 +9,7 @@ import { setUser } from "../redux/userSlice";
 
 const EditUserDetails = ({ onClose, user }) => {
   const [data, setData] = useState({
-    name: user?.user,
+    name: user?.name,
     profile_pic: user?.profile_pic,
   });
   const uploadPhotoRef = useRef();
@@ -21,7 +21,12 @@ const EditUserDetails = ({ onClose, user }) => {
         ...prev,
         ...user,
       }));
-      localStorage.setItem("edit-user-data", JSON.stringify(user));
+      try {
+        const cloneUser = JSON.parse(JSON.stringify(user));
+        localStorage.setItem("edit-user-data", JSON.stringify(cloneUser));
+      } catch (err) {
+        console.warn("Unable to stringify user for localStorage:", err);
+      }
     }
   }, [user]);
 
@@ -43,10 +48,17 @@ const EditUserDetails = ({ onClose, user }) => {
     try {
       const URL = `${process.env.REACT_APP_BACKEND}/api/update-user`;
 
+      // Only send necessary user data fields
+      const userData = {
+        name: data.name,
+        profile_pic: data.profile_pic,
+        _id: data._id
+      };
+
       const response = await axios({
         method: "post",
         url: URL,
-        data: data,
+        data: userData,
         withCredentials: true,
       });
 

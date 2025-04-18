@@ -2,13 +2,28 @@ import axios from "axios";
 import React, { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { logout, setUser } from "../redux/userSlice";
+import {
+  logout,
+  setOnlineUser,
+  setSocketConnection,
+  setUser,
+} from "../redux/userSlice";
 import { Sidebar } from "../components/Sidebar";
+import io from "socket.io-client";
 
 function Home() {
+  const user = useSelector((state) => state.user);
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
+  console.log("user", {
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    profile_pic: user.profile_pic,
+    token: user.token,
+    onlineUser: user.onlineUser,
+  });
 
   const fetchUserDetails = async () => {
     try {
@@ -37,6 +52,23 @@ function Home() {
   useEffect(() => {
     fetchUserDetails();
   }, []);
+  /**socket connection */
+
+  useEffect(() => {
+    const socketConnection = io(process.env.REACT_APP_BACKEND, {
+      auth: {
+        token: localStorage.getItem("token"),
+      },
+    });
+    socketConnection.on("onlineUser", (data) => {
+      console.log("data", data);
+      dispatch(setOnlineUser(data));
+    });
+    dispatch(setSocketConnection(socketConnection));
+    return () => {
+      socketConnection.disconnect();
+    };
+  }, []);
 
   const basePath = location.pathname === "/";
   return (
@@ -49,13 +81,12 @@ function Home() {
         <Outlet />
       </section>
 
-      <div className="lg:flex justify-center items-center flex-col gap-2 hidden">
-        {/* <div>
-          <img src={logo} width={250} alt="logo" />
-        </div> */}
-        <p className="text-lg mt-2 text-slate-500">
-          Select user to send message
-        </p>
+      <div
+        className={`justify-center items-center flex-col gap-2 hidden ${
+          !basePath ? "hidden" : "lg:flex"
+        }`}
+      >
+        <h1 className="text-2xl font-bold text-slate-500">Zalo App</h1>
       </div>
     </div>
   );

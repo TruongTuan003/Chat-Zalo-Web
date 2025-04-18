@@ -10,6 +10,9 @@ function CheckPasswordPage() {
   const [data, setData] = useState({
     password: "",
   });
+  const [errors, setErrors] = useState({
+    password: "",
+  });
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useDispatch();
@@ -20,19 +23,50 @@ function CheckPasswordPage() {
     }
   }, [location, navigate]);
 
+  const validatePassword = (password) => {
+    const errors = {};
+    
+    if (!password) {
+      errors.password = "Vui lòng nhập mật khẩu";
+    } else if (password.length < 6) {
+      errors.password = "Mật khẩu phải có ít nhất 6 ký tự";
+    } else if (!/[A-Z]/.test(password)) {
+      errors.password = "Mật khẩu phải chứa ít nhất một chữ in hoa";
+    } else if (!/[a-z]/.test(password)) {
+      errors.password = "Mật khẩu phải chứa ít nhất một chữ thường";
+    } else if (!/[0-9]/.test(password)) {
+      errors.password = "Mật khẩu phải chứa ít nhất một chữ số";
+    }
+
+    return errors;
+  };
+
   const handleOnChange = (e) => {
     const { name, value } = e.target;
-    setData((preve) => {
-      return {
-        ...preve,
-        [name]: value,
-      };
-    });
+    setData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+    
+    // Clear error when user starts typing
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: ""
+      }));
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Validate password
+    const validationErrors = validatePassword(data.password);
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      return;
+    }
 
     const URL = `${process.env.REACT_APP_BACKEND}/api/password`;
     try {
@@ -46,17 +80,20 @@ function CheckPasswordPage() {
         withCredentials: true,
       });
 
-      toast.success(response.data.message);
-
       if (response.data.success) {
-        dispatch(setToken(response?.data?.token));
-        localStorage.setItem("token", response?.data?.token);
+        const token = response.data.token;
+        dispatch(setToken(token));
+        localStorage.setItem("token", token);
         setData({ password: "" });
+        toast.success("Đăng nhập thành công");
         navigate("/");
       }
     } catch (error) {
-      toast.error(error?.response?.data?.message);
-      console.log("error", error);
+      if (error.response?.status === 401) {
+        toast.error("Mật khẩu không đúng");
+      } else {
+        toast.error("Đăng nhập thất bại. Vui lòng thử lại sau.");
+      }
     }
   };
 
@@ -64,14 +101,14 @@ function CheckPasswordPage() {
     const phone = location?.state?.phone;
 
     if (!phone) {
-      toast.error("Phone number is missing. Please try again.");
+      toast.error("Thiếu số điện thoại. Vui lòng thử lại.");
       return;
     }
 
     const URL = `${process.env.REACT_APP_BACKEND}/api/phone`;
     try {
       const response = await axios.post(URL, { phone });
-      toast.success("Check your phone for the reset link!");
+      toast.success("Vui lòng kiểm tra điện thoại để nhận liên kết đặt lại mật khẩu!");
 
       if (response.data.success) {
         navigate("/reset-password", {
@@ -79,7 +116,7 @@ function CheckPasswordPage() {
         });
       }
     } catch (error) {
-      toast.error(error?.response?.data?.message || "Something went wrong");
+      toast.error(error?.response?.data?.message || "Đã xảy ra lỗi");
     }
   };
 
@@ -97,34 +134,47 @@ function CheckPasswordPage() {
             {location?.state?.name}
           </h2>
         </div>
-        <h3>Welcome to Chat app!</h3>
+        <h3>Chào mừng đến với ứng dụng Chat!</h3>
         <form className="grid gap-4 mt-3" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-1">
-            <label htmlFor="password">Password :</label>
+            <label htmlFor="password">Mật khẩu:</label>
             <input
               type="password"
               id="password"
               name="password"
-              placeholder="Enter your password"
-              className="bg-slate-100 px-2 py-1 focus:outline-primary"
+              placeholder="Nhập mật khẩu của bạn"
+              className={`bg-slate-100 px-2 py-1 focus:outline-primary ${
+                errors.password ? "border border-red-500" : ""
+              }`}
               value={data.password}
               onChange={handleOnChange}
               required
             />
+            {errors.password && (
+              <p className="text-red-500 text-sm mt-1">{errors.password}</p>
+            )}
           </div>
 
-          <button className="bg-primary text-lg px-4 py-1 hover:bg-secondary rounded mt-2 font-bold text-white leading-relaxed tracking-wide">
-            Let's Go
+          <button 
+            className="bg-primary text-lg px-4 py-1 hover:bg-secondary rounded mt-2 font-bold text-white leading-relaxed tracking-wide disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!!errors.password}
+          >
+            Đăng nhập
           </button>
         </form>
         <p className="my-3 text-center">
           <button
-            type="button"
             onClick={handleForgotPassword}
-            className="hover:text-primary font-semibold underline mx-auto mt-2"
+            className="text-primary hover:text-secondary"
           >
-            Forgot password ?
+            Quên mật khẩu?
           </button>
+        </p>
+        <p className="my-3 text-center">
+          Chưa có tài khoản?
+          <Link to={"/register"} className="hover:text-primary font-semibold">
+            Đăng ký
+          </Link>{" "}
         </p>
       </div>
     </div>

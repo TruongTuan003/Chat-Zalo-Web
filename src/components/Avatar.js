@@ -1,7 +1,10 @@
 import React from "react";
 import { TbUserCircle } from "react-icons/tb";
+import { useSelector } from "react-redux";
 
 export const Avatar = ({ userId, name, imageUrl, width = 50, height = 50 }) => {
+  const onlineUser = useSelector((state) => state?.user?.onlineUser);
+
   let avatarName = "";
 
   if (name) {
@@ -13,9 +16,11 @@ export const Avatar = ({ userId, name, imageUrl, width = 50, height = 50 }) => {
     }
   }
 
+  const isOnline = onlineUser.includes(userId);
+
   return (
     <div
-      className="text-slate-800 overflow-hidden font-bold rounded-full flex items-center justify-center"
+      className="text-slate-800 overflow-hidden font-bold rounded-full flex items-center justify-center relative"
       style={{ width, height }}
     >
       {imageUrl ? (
@@ -40,6 +45,10 @@ export const Avatar = ({ userId, name, imageUrl, width = 50, height = 50 }) => {
         </div>
       ) : (
         <TbUserCircle size={width} />
+      )}
+
+      {isOnline && (
+        <div className="bg-green-600 p-2 absolute bottom-0 right-0  rounded-full"></div>
       )}
     </div>
   );
