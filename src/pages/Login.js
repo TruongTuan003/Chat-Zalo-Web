@@ -99,7 +99,7 @@ const Login = () => {
         const token = loginRes.data.token;
         localStorage.setItem("token", token);
         toast.success("Đăng nhập thành công");
-        navigate("/");
+        navigate("/home");
       }
     } catch (error) {
       if (error.response?.status === 404) {
