@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter } from "react-router-dom";
 import App from "../App";
 import RegisterPage from "../pages/RegisterPage";
 import CheckPhonePage from "../pages/CheckPhonePage";
@@ -15,10 +15,6 @@ const router = createBrowserRouter([
     path: "/",
     element: <App />,
     children: [
-      {
-        path: "",
-        element: <Navigate to="/login" replace />,
-      },
       {
         path: "login",
         element: (
@@ -68,7 +64,7 @@ const router = createBrowserRouter([
         ),
       },
       {
-        path: "home",
+        path: "",
         element: <Home />,
         children: [{ path: ":userId", element: <MessagePage /> }],
       },

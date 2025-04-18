@@ -86,7 +86,7 @@ function CheckPasswordPage() {
         localStorage.setItem("token", token);
         setData({ password: "" });
         toast.success("Đăng nhập thành công");
-        navigate("/home");
+        navigate("/");
       }
     } catch (error) {
       if (error.response?.status === 401) {
