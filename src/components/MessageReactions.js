@@ -24,23 +24,7 @@ const MessageReactions = ({ message, onReact, currentUserId }) => {
   const hasUserHeart = groupedReactions['❤️']?.includes(currentUserId);
 
   return (
-    <div className="relative">
-      {/* Hiển thị reactions hiện tại */}
-      {Object.keys(groupedReactions).length > 0 && (
-        <div className="absolute -top-6 -left-2 bg-white rounded-full shadow-md px-2 py-1 flex gap-1">
-          {Object.entries(groupedReactions).map(([emoji, users]) => (
-            <div 
-              key={emoji} 
-              className="flex items-center cursor-pointer hover:bg-gray-100 rounded px-1"
-              title={`${users.length} người đã bày tỏ cảm xúc này`}
-            >
-              <span>{emoji}</span>
-              <span className="ml-1 text-xs text-gray-500">{users.length}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
+    <div className="relative flex flex-col items-start gap-1">
       {/* Nút hiện emoji picker */}
       <button
         className={`group transition-all duration-200 p-1.5 rounded-full border 
@@ -56,10 +40,26 @@ const MessageReactions = ({ message, onReact, currentUserId }) => {
         )}
       </button>
 
+      {/* Hiển thị reactions hiện tại */}
+      {Object.keys(groupedReactions).length > 0 && (
+        <div className="bg-white rounded-full shadow-md px-2 py-1 flex gap-1 ml-1">
+          {Object.entries(groupedReactions).map(([emoji, users]) => (
+            <div 
+              key={emoji} 
+              className="flex items-center cursor-pointer hover:bg-gray-100 rounded px-1"
+              title={`${users.length} người đã bày tỏ cảm xúc này`}
+            >
+              <span>{emoji}</span>
+              <span className="ml-1 text-xs text-gray-500">{users.length}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Emoji picker */}
       {showReactionPicker && (
         <>
-          <div className="absolute bottom-8 left-0 bg-white rounded-lg shadow-lg p-2 z-50">
+          <div className="absolute top-8 left-0 bg-white rounded-lg shadow-lg p-2 z-50">
             <div className="flex gap-2">
               {EMOJI_LIST.map((emoji) => (
                 <button
