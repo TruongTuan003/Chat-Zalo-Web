@@ -3,7 +3,7 @@ import { useSelector } from "react-redux";
 import { Link, useParams } from "react-router-dom";
 import Avatar from "./Avatar";
 import { HiDotsVertical } from "react-icons/hi";
-import { FaAngleLeft, FaPlus, FaImage, FaVideo } from "react-icons/fa6";
+import { FaAngleLeft, FaPlus, FaImage, FaVideo, FaFile } from "react-icons/fa6";
 import uploadFile from "../helpers/uploadFile";
 import { IoClose } from "react-icons/io5";
 import { Loading } from "./Loading";
@@ -36,6 +36,8 @@ function MessagePage() {
     text: "",
     imageUrl: "",
     videoUrl: "",
+    fileUrl: "",
+    fileName: ""
   });
 
   const [loading, setLoading] = useState(false);
@@ -100,6 +102,41 @@ function MessagePage() {
     }));
   };
 
+  const handleUploadFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Check file size (limit to 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File quá lớn. Kích thước tối đa là 10MB');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const uploadResult = await uploadFile(file);
+      setLoading(false);
+      setOpenImageVideoUpload(false);
+
+      setMassage((prev) => ({
+        ...prev,
+        fileUrl: uploadResult.url,
+        fileName: file.name
+      }));
+    } catch (error) {
+      setLoading(false);
+      toast.error('Không thể tải file lên. Vui lòng thử lại');
+    }
+  };
+
+  const handleClearUploadFile = () => {
+    setMassage((prev) => ({
+      ...prev,
+      fileUrl: "",
+      fileName: ""
+    }));
+  };
+
   console.log("params", params.userId);
 
   useEffect(() => {
@@ -110,6 +147,7 @@ function MessagePage() {
       socketConnection.on("message-user", (data) => {
         setDataUser(data);
       });
+
       socketConnection.on("message", (data) => {
         console.log("message data", data);
         setAllMessage(data);
@@ -173,7 +211,7 @@ function MessagePage() {
   const handleSendMessage = (e) => {
     e.preventDefault();
 
-    if (message.text || message.imageUrl || message.videoUrl) {
+    if (message.text || message.imageUrl || message.videoUrl || message.fileUrl) {
       if (socketConnection) {
         socketConnection.emit("new massage", {
           sender: user?._id,
@@ -181,12 +219,15 @@ function MessagePage() {
           text: message.text,
           imageUrl: message.imageUrl,
           videoUrl: message.videoUrl,
+          fileUrl: message.fileUrl,
           msgByUserId: user._id,
         });
         setMassage({
           text: "",
           imageUrl: "",
           videoUrl: "",
+          fileUrl: "",
+          fileName: ""
         });
       }
     }
@@ -300,6 +341,20 @@ function MessagePage() {
                     className="w-full h-full object-scale-down"
                   />
                 )}
+                {msg?.fileUrl && (
+                  <div className="flex items-center gap-2 p-2 bg-gray-100 rounded">
+                    <FaFile className="text-blue-500" />
+                    <a 
+                      href={msg.fileUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:underline truncate max-w-[200px]"
+                      title={msg.fileName || 'Tải file'}
+                    >
+                      {msg.fileName || 'Tải file'}
+                    </a>
+                  </div>
+                )}
 
                 <p className="px-2">{msg.text}</p>
                 
@@ -368,6 +423,22 @@ function MessagePage() {
             </div>
           </div>
         )}
+        {message.fileUrl && (
+          <div className="w-full h-full sticky bottom-0 bg-slate-700 bg-opacity-10 flex justify-center items-center rounded overflow-hidden">
+            <div
+              className="w-fit p-2 absolute top-0 right-0 cursor-pointer hover:text-red-600"
+              onClick={handleClearUploadFile}
+            >
+              <IoClose size={30} />
+            </div>
+            <div className="bg-white p-3">
+              <div className="flex items-center gap-2">
+                <FaFile className="text-blue-500" />
+                <span className="text-sm">{message.fileName}</span>
+              </div>
+            </div>
+          </div>
+        )}
         {loading && (
           <div className="w-full h-full sticky bottom-0 flex justify-center items-center">
             <Loading />
@@ -394,7 +465,7 @@ function MessagePage() {
                   <div className="text-primary">
                     <FaImage size={18} />
                   </div>
-                  <p>Image</p>
+                  <p>Hình ảnh</p>
                 </label>
                 <label
                   htmlFor="uploadVideo"
@@ -405,17 +476,33 @@ function MessagePage() {
                   </div>
                   <p>Video</p>
                 </label>
+                <label
+                  htmlFor="uploadFile"
+                  className="flex items-center p-2 px-3 gap-3 hover:bg-slate-200 cursor-pointer"
+                >
+                  <div>
+                    <FaFile size={18} />
+                  </div>
+                  <p>File</p>
+                </label>
                 <input
                   type="file"
                   id="uploadImage"
                   onChange={handleUploadImage}
                   className="hidden"
+                  accept="image/*"
                 />
-
                 <input
                   type="file"
                   id="uploadVideo"
                   onChange={handleUploadVideo}
+                  className="hidden"
+                  accept="video/*"
+                />
+                <input
+                  type="file"
+                  id="uploadFile"
+                  onChange={handleUploadFile}
                   className="hidden"
                 />
               </form>
@@ -427,8 +514,8 @@ function MessagePage() {
         <form className="h-full w-full flex gap-2" onSubmit={handleSendMessage}>
           <input
             type="text"
-            placeholder="Type here message..."
-            className="py-1 px-4 outline-none w-full h-full "
+            placeholder="Nhập tin nhắn..."
+            className="py-1 px-4 outline-none w-full h-full"
             value={message.text}
             onChange={handleOnchange}
           />
