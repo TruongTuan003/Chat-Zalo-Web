@@ -12,6 +12,8 @@ import moment from "moment";
 import ForwardedMessage from "./ForwardedMessage";
 import ForwardMessageMenu from "./ForwardMessageMenu";
 import MessageReactions from "./MessageReactions";
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 function MessagePage() {
   const params = useParams();
@@ -118,11 +120,39 @@ function MessagePage() {
         setContacts(data);
       });
 
+      // Listen for delete message success
+      socketConnection.on("delete-message-success", (data) => {
+        console.log("Message deleted successfully:", data.messageId);
+        toast.success('Đã xóa tin nhắn thành công', {
+          position: "top-right",
+          autoClose: 3000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      });
+
+      // Listen for errors
+      socketConnection.on("error", (error) => {
+        console.error("Socket error:", error);
+        toast.error(error.message || 'Có lỗi xảy ra', {
+          position: "top-right",
+          autoClose: 3000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+      });
+
       // Cleanup socket listeners
       return () => {
         socketConnection.off("message-user");
         socketConnection.off("message");
         socketConnection.off("contacts");
+        socketConnection.off("delete-message-success");
+        socketConnection.off("error");
       };
     }
   }, [socketConnection, params.userId, user]);
@@ -181,6 +211,7 @@ function MessagePage() {
 
   return (
     <div>
+      <ToastContainer />
       <header className="sticky top-0 h-16 bg-white flex justify-between items-center px-4">
         <div className="flex items-center gap-4">
           <Link to={"/"} className="lg:hidden">
@@ -222,7 +253,7 @@ function MessagePage() {
             return (
               <div
                 key={msg._id}
-                className={`bg-white p-1 py-2 rounded w-fit max-w-[280px] md:max-w-sm lg:max-w-md ${
+                className={`bg-white p-1 py-2 rounded w-fit max-w-[280px] md:max-w-sm lg:max-w-md relative ${
                   user._id === msg.msgByUserId ? "ml-auto bg-teal-300" : ""
                 }`}
               >
@@ -259,19 +290,18 @@ function MessagePage() {
                     onReact={handleReaction}
                     currentUserId={user._id}
                   />
-                  <p className="text-xs text-gray-500">
-                    {moment(msg.createAt).format("HH:mm")}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-gray-500">
+                      {moment(msg.createAt).format("HH:mm")}
+                    </p>
+                    <ForwardMessageMenu
+                      onForward={handleForwardMessage}
+                      contacts={contacts}
+                      selectedMessage={msg}
+                      currentChatUserId={params.userId}
+                    />
+                  </div>
                 </div>
-
-                {user._id === msg.msgByUserId && (
-                  <ForwardMessageMenu
-                    onForward={handleForwardMessage}
-                    contacts={contacts}
-                    selectedMessage={msg}
-                    currentChatUserId={params.userId}
-                  />
-                )}
               </div>
             );
           })}
