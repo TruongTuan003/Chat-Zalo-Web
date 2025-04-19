@@ -9,6 +9,9 @@ import { IoClose } from "react-icons/io5";
 import { Loading } from "./Loading";
 import { IoMdSend } from "react-icons/io";
 import moment from "moment";
+import ForwardedMessage from "./ForwardedMessage";
+import ForwardMessageMenu from "./ForwardMessageMenu";
+import MessageReactions from "./MessageReactions";
 
 function MessagePage() {
   const params = useParams();
@@ -34,6 +37,9 @@ function MessagePage() {
   const [loading, setLoading] = useState(false);
   const [allMessage, setAllMessage] = useState([]);
   const currentMessage = useRef(null);
+
+  const [selectedMessage, setSelectedMessage] = useState(null);
+  const [contacts, setContacts] = useState([]);
 
   useEffect(() => {
     if (currentMessage.current) {
@@ -95,7 +101,6 @@ function MessagePage() {
   useEffect(() => {
     if (socketConnection) {
       socketConnection.emit("message-page", params.userId);
-
       socketConnection.emit("seen", params.userId);
 
       socketConnection.on("message-user", (data) => {
@@ -105,6 +110,20 @@ function MessagePage() {
         console.log("message data", data);
         setAllMessage(data);
       });
+
+      // Get contacts for forwarding
+      socketConnection.emit("get-contacts");
+      socketConnection.on("contacts", (data) => {
+        console.log("contacts data", data);
+        setContacts(data);
+      });
+
+      // Cleanup socket listeners
+      return () => {
+        socketConnection.off("message-user");
+        socketConnection.off("message");
+        socketConnection.off("contacts");
+      };
     }
   }, [socketConnection, params.userId, user]);
 
@@ -138,6 +157,25 @@ function MessagePage() {
           videoUrl: "",
         });
       }
+    }
+  };
+
+  const handleForwardMessage = (messageId, receiverId) => {
+    if (socketConnection) {
+      socketConnection.emit("forward message", {
+        messageId,
+        sender: user._id,
+        receiver: receiverId
+      });
+    }
+  };
+
+  const handleReaction = (messageId, emoji) => {
+    if (socketConnection) {
+      socketConnection.emit("react_to_message", {
+        messageId,
+        emoji
+      });
     }
   };
 
@@ -183,10 +221,14 @@ function MessagePage() {
           {allMessage.map((msg, index) => {
             return (
               <div
+                key={msg._id}
                 className={`bg-white p-1 py-2 rounded w-fit max-w-[280px] md:max-w-sm lg:max-w-md ${
                   user._id === msg.msgByUserId ? "ml-auto bg-teal-300" : ""
                 }`}
               >
+                {msg.forwardFrom && (
+                  <ForwardedMessage message={msg.forwardFrom} />
+                )}
                 <div className="w-full">
                   {msg?.imageUrl && (
                     <img
@@ -210,9 +252,26 @@ function MessagePage() {
                 )}
 
                 <p className="px-2">{msg.text}</p>
-                <p className="text-xs ml-auto w-fit">
-                  {moment(msg.createAt).format("hh:mm")}
-                </p>
+                
+                <div className="flex items-center justify-between px-2">
+                  <MessageReactions 
+                    message={msg}
+                    onReact={handleReaction}
+                    currentUserId={user._id}
+                  />
+                  <p className="text-xs text-gray-500">
+                    {moment(msg.createAt).format("HH:mm")}
+                  </p>
+                </div>
+
+                {user._id === msg.msgByUserId && (
+                  <ForwardMessageMenu
+                    onForward={handleForwardMessage}
+                    contacts={contacts}
+                    selectedMessage={msg}
+                    currentChatUserId={params.userId}
+                  />
+                )}
               </div>
             );
           })}
