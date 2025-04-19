@@ -14,6 +14,8 @@ import ForwardMessageMenu from "./ForwardMessageMenu";
 import MessageReactions from "./MessageReactions";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { format } from "date-fns";
+import { vi } from "date-fns/locale";
 
 function MessagePage() {
   const params = useParams();
@@ -209,8 +211,25 @@ function MessagePage() {
     }
   };
 
+  // Format message time
+  const formatMessageTime = (timestamp) => {
+    if (!timestamp) return "";
+    const date = new Date(timestamp);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    const isYesterday = new Date(now.setDate(now.getDate() - 1)).toDateString() === date.toDateString();
+
+    if (isToday) {
+      return format(date, "HH:mm", { locale: vi });
+    } else if (isYesterday) {
+      return `Hôm qua ${format(date, "HH:mm", { locale: vi })}`;
+    } else {
+      return format(date, "dd/MM/yyyy HH:mm", { locale: vi });
+    }
+  };
+
   return (
-    <div>
+    <div className="flex flex-col h-full">
       <ToastContainer />
       <header className="sticky top-0 h-16 bg-white flex justify-between items-center px-4">
         <div className="flex items-center gap-4">
@@ -292,7 +311,7 @@ function MessagePage() {
                   />
                   <div className="flex items-center gap-2">
                     <p className="text-xs text-gray-500">
-                      {moment(msg.createAt).format("HH:mm")}
+                      {formatMessageTime(msg.createdAt)}
                     </p>
                     <ForwardMessageMenu
                       onForward={handleForwardMessage}
