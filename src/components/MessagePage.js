@@ -1213,7 +1213,7 @@ function MessagePage() {
 
         {/* Search panel */}
         {isSearchExpanded && (
-          <div className="w-1/3 border-l border-gray-200 flex flex-col h-[calc(100vh-64px)] bg-gray-50">
+          <div className="w-1/3 border-l-2 border-gray-300 flex flex-col h-[calc(100vh-64px)] bg-gray-50">
             <div className="p-4 border-b border-gray-200 bg-white sticky top-0 z-10 shadow-sm">
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
