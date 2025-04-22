@@ -18,6 +18,7 @@ import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import FriendRequestActions from "./FriendRequestActions";
 import axios from "axios";
+import { MdPersonRemove } from "react-icons/md";
 
 function MessagePage() {
   const params = useParams();
@@ -49,9 +50,12 @@ function MessagePage() {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [contacts, setContacts] = useState([]);
 
-  const [isFriend, setIsFriend] = useState(false);
-  const [hasPendingRequest, setHasPendingRequest] = useState(false);
-  const [requestId, setRequestId] = useState(null);
+  const [friendRequestStatus, setFriendRequestStatus] = useState({
+    isFriend: false,
+    hasPendingRequest: false,
+    requestId: null,
+    isReceiver: false
+  });
 
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -71,6 +75,9 @@ function MessagePage() {
 
   const [replyToMessage, setReplyToMessage] = useState(null);
   const [showMessageMenu, setShowMessageMenu] = useState(null);
+
+  const [showOptions, setShowOptions] = useState(false);
+  const optionsRef = useRef(null);
 
   const debouncedSearch = useCallback((value) => {
     if (searchTimeoutRef.current) {
@@ -236,14 +243,7 @@ function MessagePage() {
       // Listen for errors
       socketConnection.on("error", (error) => {
         console.error("Socket error:", error);
-        toast.error(error.message || 'Có lỗi xảy ra', {
-          position: "top-right",
-          autoClose: 3000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-        });
+        toast.error(error);
       });
 
       // Add search message listeners
@@ -262,6 +262,73 @@ function MessagePage() {
         setShowSearchResults(false);
       });
 
+      // Add friend request listeners
+      socketConnection.on("new-friend-request", (data) => {
+        console.log("Received new friend request:", data);
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          hasPendingRequest: true,
+          requestId: data.requestId,
+          isReceiver: true
+        }));
+        toast.info("Bạn có lời mời kết bạn mới");
+      });
+
+      socketConnection.on("friend-request-accepted", (data) => {
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          isFriend: true,
+          hasPendingRequest: false,
+          requestId: null
+        }));
+        if (!friendRequestStatus.isReceiver) {
+          toast.success("Đã trở thành bạn bè");
+        }
+      });
+
+      socketConnection.on("friend-request-rejected", () => {
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          hasPendingRequest: false,
+          requestId: null
+        }));
+        if (!friendRequestStatus.isReceiver) {
+          toast.info("Đã từ chối lời mời kết bạn");
+        }
+      });
+
+      socketConnection.on("friend-request-sent", (data) => {
+        if (data.success) {
+          setFriendRequestStatus(prev => ({
+            ...prev,
+            hasPendingRequest: true,
+            requestId: data.requestId,
+            isReceiver: false
+          }));
+          toast.success("Đã gửi lời mời kết bạn");
+        }
+      });
+
+      socketConnection.on("unfriend-success", (data) => {
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          isFriend: false,
+          hasPendingRequest: false,
+          requestId: null
+        }));
+        toast.success("Đã hủy kết bạn");
+      });
+
+      socketConnection.on("unfriend-received", (data) => {
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          isFriend: false,
+          hasPendingRequest: false,
+          requestId: null
+        }));
+        toast.info("Đối phương đã hủy kết bạn");
+      });
+
       // Cleanup socket listeners
       return () => {
         socketConnection.off("message-user");
@@ -272,33 +339,41 @@ function MessagePage() {
         socketConnection.off("error");
         socketConnection.off("search-messages-result");
         socketConnection.off("search-messages-error");
+        socketConnection.off("new-friend-request");
+        socketConnection.off("friend-request-accepted");
+        socketConnection.off("friend-request-rejected");
+        socketConnection.off("friend-request-sent");
+        socketConnection.off("unfriend-success");
+        socketConnection.off("unfriend-received");
       };
     }
-  }, [socketConnection, params.userId, user]);
+  }, [socketConnection, params.userId, user, friendRequestStatus.isReceiver]);
 
   useEffect(() => {
-    const checkFriendStatus = async () => {
+    const checkFriendRequestStatus = async () => {
       try {
-        const URL = `${process.env.REACT_APP_BACKEND}/api/search-user?currentUserId=${user._id}`;
-        const response = await axios.post(URL, {
-          search: dataUser.name
+        const response = await axios.post(`${process.env.REACT_APP_BACKEND}/api/check-friend-request`, {
+          currentUserId: user._id,
+          targetUserId: dataUser._id
         });
 
-        const foundUser = response.data.data.find(u => u._id === dataUser._id);
-        if (foundUser) {
-          setIsFriend(foundUser.isFriend);
-          setHasPendingRequest(foundUser.hasPendingRequest);
-          setRequestId(foundUser.requestId);
+        if (response.data.success) {
+          setFriendRequestStatus({
+            isFriend: response.data.isFriend,
+            hasPendingRequest: response.data.hasPendingRequest,
+            requestId: response.data.requestId,
+            isReceiver: response.data.isReceiver
+          });
         }
       } catch (error) {
-        console.error("Error checking friend status:", error);
+        console.error("Error checking friend request status:", error);
       }
     };
 
-    if (dataUser._id) {
-      checkFriendStatus();
+    if (user._id && dataUser._id) {
+      checkFriendRequestStatus();
     }
-  }, [dataUser._id, dataUser.name, user._id]);
+  }, [user._id, dataUser._id]);
 
   const handleOnchange = (e) => {
     const { name, value } = e.target;
@@ -450,6 +525,96 @@ function MessagePage() {
     );
   };
 
+  const handleSendFriendRequest = async () => {
+    try {
+      setLoading(true);
+      const URL = `${process.env.REACT_APP_BACKEND}/api/send-friend-request`;
+      
+      const response = await axios.post(URL, {
+        currentUserId: user._id,
+        targetUserId: dataUser._id
+      }, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.data.success) {
+        socketConnection.emit("send-friend-request", {
+          targetUserId: dataUser._id,
+          token: localStorage.getItem("token")
+        });
+
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          hasPendingRequest: true
+        }));
+      }
+    } catch (error) {
+      console.error("Error sending friend request:", error);
+      toast.error(error?.response?.data?.message || "Có lỗi xảy ra");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFriendRequestResponse = async (action) => {
+    try {
+      const response = await axios.post(`${process.env.REACT_APP_BACKEND}/api/handle-friend-request`, {
+        currentUserId: user._id,
+        requestId: friendRequestStatus.requestId,
+        action
+      });
+
+      if (response.data.success) {
+        // Emit socket event
+        socketConnection.emit("friend-request-response", {
+          requestId: friendRequestStatus.requestId,
+          action
+        });
+
+        // Update local state
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          hasPendingRequest: false,
+          isFriend: action === 'accept'
+        }));
+
+        // Hiển thị thông báo cho người nhận khi họ click nút
+        if (friendRequestStatus.isReceiver) {
+          toast.success(action === 'accept' ? 'Đã chấp nhận lời mời kết bạn' : 'Đã từ chối lời mời kết bạn');
+        }
+      }
+    } catch (error) {
+      console.error("Error handling friend request:", error);
+      toast.error(error?.response?.data?.message || "Có lỗi xảy ra khi xử lý yêu cầu kết bạn");
+    }
+  };
+
+  const handleUnfriend = (e) => {
+    e.stopPropagation(); // Prevent event from bubbling up
+    if (window.confirm("Bạn có chắc chắn muốn hủy kết bạn không?")) {
+      socketConnection.emit("unfriend", {
+        targetUserId: dataUser._id
+      });
+      setShowOptions(false);
+    }
+  };
+
+  // Xử lý click ra ngoài menu
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (optionsRef.current && !optionsRef.current.contains(event.target)) {
+        setShowOptions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   return (
     <div className="flex flex-col h-full">
       <ToastContainer />
@@ -487,12 +652,63 @@ function MessagePage() {
             <HiSearch size={20} />
           </button>
 
-          {hasPendingRequest && (
-            <FriendRequestActions userId={dataUser._id} requestId={requestId} />
+          {!friendRequestStatus.isFriend && !friendRequestStatus.hasPendingRequest && (
+            <button
+              onClick={handleSendFriendRequest}
+              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+            >
+              Kết bạn
+            </button>
           )}
-          <button className="cursor-pointer p-2 hover:bg-gray-100 rounded-full">
-            <HiDotsVertical />
-          </button>
+
+          {friendRequestStatus.hasPendingRequest && friendRequestStatus.isReceiver && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleFriendRequestResponse('accept')}
+                className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
+              >
+                Chấp nhận
+              </button>
+              <button
+                onClick={() => handleFriendRequestResponse('reject')}
+                className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
+              >
+                Từ chối
+              </button>
+            </div>
+          )}
+
+          {friendRequestStatus.hasPendingRequest && !friendRequestStatus.isReceiver && (
+            <button
+              className="bg-gray-500 text-white px-4 py-2 rounded-lg cursor-not-allowed"
+              disabled
+            >
+              Đã gửi yêu cầu
+            </button>
+          )}
+
+          <div className="relative" ref={optionsRef}>
+            <button 
+              onClick={() => setShowOptions(!showOptions)}
+              className="cursor-pointer p-2 hover:bg-gray-100 rounded-full"
+            >
+              <HiDotsVertical size={20} />
+            </button>
+            
+            {showOptions && (
+              <div className="absolute right-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[150px] z-[60]">
+                {friendRequestStatus.isFriend && (
+                  <button
+                    onMouseDown={handleUnfriend}
+                    className="w-full px-4 py-3 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2 transition-colors duration-200"
+                  >
+                    <MdPersonRemove size={20} />
+                    <span>Hủy kết bạn</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -500,12 +716,8 @@ function MessagePage() {
         {/* Main chat area */}
         <div className={`flex-1 ${isSearchExpanded ? 'w-2/3' : 'w-full'}`}>
           {/** show all message */}
-          <section className="h-[calc(100vh-128px)] overflow-hidden overflow-y-scroll scrollbar relative">
-            {isSearching ? (
-              <div className="flex justify-center items-center h-full">
-                <Loading />
-              </div>
-            ) : (
+          <section className="h-[calc(100vh-128px)] overflow-hidden overflow-y-scroll scrollbar relative z-0">
+            {friendRequestStatus.isFriend ? (
               <div className="flex flex-col gap-2 py-2 mx-2" ref={currentMessage}>
                 {allMessage.map((msg) => {
                   const isCurrentUser = msg.msgByUserId._id === user._id;
@@ -647,174 +859,130 @@ function MessagePage() {
                   );
                 })}
               </div>
-            )}
-
-            {/** upload image display */}
-            {message.imageUrl && (
-              <div className="w-full h-full sticky bottom-0 bg-slate-700 bg-opacity-10 flex justify-center items-center rounded overflow-hidden ">
-                <div
-                  className="w-fit p-2 absolute top-0 right-0 cursor-pointer hover:text-red-600 "
-                  onClick={hanldeClearUploadImage}
-                >
-                  <IoClose size={30} />
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center">
+                <div className="text-center space-y-4">
+                  <p className="text-gray-500">Các bạn chưa là bạn bè</p>
+                  {!friendRequestStatus.isFriend && !friendRequestStatus.hasPendingRequest && (
+                    <button 
+                      onClick={handleSendFriendRequest}
+                      className="bg-primary text-white px-6 py-2 rounded-full hover:bg-blue-600 transition-colors disabled:opacity-50"
+                    >
+                      {loading ? "Đang xử lý..." : "Gửi lời mời kết bạn"}
+                    </button>
+                  )}
+                  <p className="text-gray-500">Hãy kết bạn để bắt đầu trò chuyện</p>
                 </div>
-                <div className="bg-white p-3">
-                  <img
-                    src={message.imageUrl}
-                    width={300}
-                    height={300}
-                    alt="uploadImage"
-                    className="aspect-square w-full h-full max-w-sm m-2 object-scale-down "
-                  />
-                </div>
-              </div>
-            )}
-            {/** upload video display */}
-            {message.videoUrl && (
-              <div className="w-full h-full sticky bottom-0 bg-slate-700 bg-opacity-10 flex justify-center items-center rounded overflow-hidden ">
-                <div
-                  className="w-fit p-2 absolute top-0 right-0 cursor-pointer hover:text-red-600 "
-                  onClick={hanldeClearUploadVideo}
-                >
-                  <IoClose size={30} />
-                </div>
-                <div className="bg-white p-3">
-                  <video
-                    src={message.videoUrl}
-                    width={300}
-                    height={300}
-                    className="aspect-square w-full h-full max-w-sm m-2 object-scale-down "
-                    controls
-                    muted
-                    autoPlay
-                  />
-                </div>
-              </div>
-            )}
-            {message.fileUrl && (
-              <div className="w-full h-full sticky bottom-0 bg-slate-700 bg-opacity-10 flex justify-center items-center rounded overflow-hidden">
-                <div
-                  className="w-fit p-2 absolute top-0 right-0 cursor-pointer hover:text-red-600"
-                  onClick={handleClearUploadFile}
-                >
-                  <IoClose size={30} />
-                </div>
-                <div className="bg-white p-3">
-                  <div className="flex items-center gap-2">
-                    <FaFile className="text-blue-500" />
-                    <span className="text-sm">{message.fileName}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            {loading && (
-              <div className="w-full h-full sticky bottom-0 flex justify-center items-center">
-                <Loading />
               </div>
             )}
           </section>
 
           {/**send message */}
           <section className="h-16 bg-white flex items-center px-4">
-            <div className="relative flex items-center gap-2">
-              <button
-                onClick={handleUploadImageVideoOpen}
-                className="flex justify-center items-center w-11 h-11 rounded-full hover:bg-slate-400 hover:text-white"
-              >
-                <FaPlus size={20} />
-              </button>
-              {/**video va image */}
-              {openImageVideoUpload && (
-                <div className="bg-white shadow rounded absolute bottom-14 w-36 p-2">
-                  <form>
-                    <label
-                      htmlFor="uploadImage"
-                      className="flex items-center p-2 px-3 gap-3 hover:bg-slate-200 cursor-pointer"
+            {friendRequestStatus.isFriend && (
+              <div className="h-full w-full flex flex-col justify-center">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <button
+                      onClick={handleUploadImageVideoOpen}
+                      className="flex justify-center items-center w-10 h-10 rounded-full hover:bg-gray-100"
                     >
-                      <div className="text-primary">
-                        <FaImage size={18} />
+                      <FaPlus size={20} className="text-gray-600" />
+                    </button>
+                    {/**video va image */}
+                    {openImageVideoUpload && (
+                      <div className="bg-white shadow-lg rounded-lg absolute bottom-12 w-40 py-2 z-10">
+                        <form>
+                          <label
+                            htmlFor="uploadImage"
+                            className="flex items-center px-4 py-2 gap-3 hover:bg-gray-100 cursor-pointer"
+                          >
+                            <FaImage className="text-blue-500" size={18} />
+                            <p>Hình ảnh</p>
+                          </label>
+                          <label
+                            htmlFor="uploadVideo"
+                            className="flex items-center px-4 py-2 gap-3 hover:bg-gray-100 cursor-pointer"
+                          >
+                            <FaVideo className="text-purple-500" size={18} />
+                            <p>Video</p>
+                          </label>
+                          <label
+                            htmlFor="uploadFile"
+                            className="flex items-center px-4 py-2 gap-3 hover:bg-gray-100 cursor-pointer"
+                          >
+                            <FaFile className="text-green-500" size={18} />
+                            <p>File</p>
+                          </label>
+                          <input
+                            type="file"
+                            id="uploadImage"
+                            onChange={handleUploadImage}
+                            className="hidden"
+                            accept="image/*"
+                          />
+                          <input
+                            type="file"
+                            id="uploadVideo"
+                            onChange={handleUploadVideo}
+                            className="hidden"
+                            accept="video/*"
+                          />
+                          <input
+                            type="file"
+                            id="uploadFile"
+                            onChange={handleUploadFile}
+                            className="hidden"
+                          />
+                        </form>
                       </div>
-                      <p>Hình ảnh</p>
-                    </label>
-                    <label
-                      htmlFor="uploadVideo"
-                      className="flex items-center p-2 px-3 gap-3 hover:bg-slate-200 cursor-pointer"
-                    >
-                      <div>
-                        <FaVideo size={18} />
-                      </div>
-                      <p>Video</p>
-                    </label>
-                    <label
-                      htmlFor="uploadFile"
-                      className="flex items-center p-2 px-3 gap-3 hover:bg-slate-200 cursor-pointer"
-                    >
-                      <div>
-                        <FaFile size={18} />
-                      </div>
-                      <p>File</p>
-                    </label>
-                    <input
-                      type="file"
-                      id="uploadImage"
-                      onChange={handleUploadImage}
-                      className="hidden"
-                      accept="image/*"
-                    />
-                    <input
-                      type="file"
-                      id="uploadVideo"
-                      onChange={handleUploadVideo}
-                      className="hidden"
-                      accept="video/*"
-                    />
-                    <input
-                      type="file"
-                      id="uploadFile"
-                      onChange={handleUploadFile}
-                      className="hidden"
-                    />
-                  </form>
-                </div>
-              )}
-
-              {/* Reply Preview */}
-              {replyToMessage && (
-                <div className="flex items-center gap-2 bg-gray-100 rounded-lg py-1 px-3 max-w-[200px]">
-                  <HiReply className="text-gray-500 shrink-0" size={16} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-xs text-gray-700 truncate">
-                      {replyToMessage.msgByUserId._id === user._id ? "Bạn" : dataUser.name}
-                    </p>
-                    <div className="text-xs text-gray-600 truncate">
-                      {replyToMessage.text}
-                      {replyToMessage.imageUrl && "(Hình ảnh)"}
-                      {replyToMessage.videoUrl && "(Video)"}
-                      {replyToMessage.fileUrl && "(File)"}
-                    </div>
+                    )}
                   </div>
-                  <button 
-                    onClick={() => setReplyToMessage(null)}
-                    className="text-gray-500 hover:text-gray-700 shrink-0"
-                  >
-                    <IoClose size={14} />
-                  </button>
-                </div>
-              )}
-            </div>
 
-            <form className="h-full w-full flex gap-2 ml-2" onSubmit={handleSendMessage}>
-              <input
-                type="text"
-                placeholder="Nhập tin nhắn..."
-                className="py-1 px-4 outline-none w-full h-full"
-                value={message.text}
-                onChange={handleOnchange}
-              />
-              <button className="hover:text-slate-500 cursor-pointer">
-                <IoMdSend size={28} />
-              </button>
-            </form>
+                  <div className="flex-1 flex items-center gap-3">
+                    {/* Reply Preview */}
+                    {replyToMessage && (
+                      <div className="flex items-center gap-2 bg-gray-100 rounded-lg py-1 px-3 max-w-[200px]">
+                        <HiReply className="text-gray-500 shrink-0" size={16} />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-xs text-gray-700 truncate">
+                            {replyToMessage.msgByUserId._id === user._id ? "Bạn" : dataUser.name}
+                          </p>
+                          <div className="text-xs text-gray-600 truncate">
+                            {replyToMessage.text}
+                            {replyToMessage.imageUrl && "(Hình ảnh)"}
+                            {replyToMessage.videoUrl && "(Video)"}
+                            {replyToMessage.fileUrl && "(File)"}
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => setReplyToMessage(null)}
+                          className="text-gray-500 hover:text-gray-700 shrink-0"
+                        >
+                          <IoClose size={14} />
+                        </button>
+                      </div>
+                    )}
+
+                    <form className="flex-1 flex items-center gap-3" onSubmit={handleSendMessage}>
+                      <input
+                        type="text"
+                        placeholder="Nhập tin nhắn..."
+                        className="w-full py-2 px-4 rounded-full bg-gray-100 outline-none focus:ring-2 focus:ring-blue-300 transition-all"
+                        value={message.text}
+                        onChange={handleOnchange}
+                      />
+                      <button 
+                        type="submit"
+                        className="text-blue-500 hover:text-blue-600 p-2 rounded-full hover:bg-gray-100 transition-colors"
+                      >
+                        <IoMdSend size={24} />
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
         </div>
 

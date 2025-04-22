@@ -7,7 +7,6 @@ import { useSelector } from "react-redux";
 
 export const UserSearchCard = ({ user, onClose }) => {
   const [isFriend, setIsFriend] = useState(user.isFriend);
-  const [hasPendingRequest, setHasPendingRequest] = useState(user.hasPendingRequest);
   const [isLoading, setIsLoading] = useState(false);
   const currentUser = useSelector((state) => state?.user);
   const socketConnection = useSelector((state) => state?.user?.socketConnection);
@@ -23,58 +22,9 @@ export const UserSearchCard = ({ user, onClose }) => {
       });
 
       if (response.data.success) {
-        // Emit socket event for friend request
         socketConnection.emit("send-friend-request", {
           targetUserId: user._id
         });
-
-        setHasPendingRequest(true);
-        toast.success("Đã gửi lời mời kết bạn!");
-      }
-    } catch (error) {
-      toast.error(error?.response?.data?.message || "Có lỗi xảy ra");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleAcceptRequest = async () => {
-    try {
-      setIsLoading(true);
-      const URL = `${process.env.REACT_APP_BACKEND}/api/handle-friend-request`;
-      
-      const response = await axios.post(URL, {
-        currentUserId: currentUser._id,
-        requestId: user.requestId,
-        action: 'accept'
-      });
-
-      if (response.data.success) {
-        setIsFriend(true);
-        setHasPendingRequest(false);
-        toast.success("Đã chấp nhận lời mời kết bạn!");
-      }
-    } catch (error) {
-      toast.error(error?.response?.data?.message || "Có lỗi xảy ra");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleRejectRequest = async () => {
-    try {
-      setIsLoading(true);
-      const URL = `${process.env.REACT_APP_BACKEND}/api/handle-friend-request`;
-      
-      const response = await axios.post(URL, {
-        currentUserId: currentUser._id,
-        requestId: user.requestId,
-        action: 'reject'
-      });
-
-      if (response.data.success) {
-        setHasPendingRequest(false);
-        toast.success("Đã từ chối lời mời kết bạn!");
       }
     } catch (error) {
       toast.error(error?.response?.data?.message || "Có lỗi xảy ra");
@@ -109,8 +59,6 @@ export const UserSearchCard = ({ user, onClose }) => {
       <div>
         {isFriend ? (
           <span className="text-green-500 text-sm">Bạn bè</span>
-        ) : hasPendingRequest ? (
-          <span className="text-blue-500 text-sm">Đã gửi lời mời</span>
         ) : (
           <button
             onClick={handleSendFriendRequest}
