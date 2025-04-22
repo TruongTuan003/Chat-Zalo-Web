@@ -823,6 +823,36 @@ function MessagePage() {
     }
   };
 
+  const handleRecallMessage = (messageId) => {
+    if (window.confirm("Bạn có chắc chắn muốn thu hồi tin nhắn này không?")) {
+      if (socketConnection) {
+        socketConnection.emit("recall-message", {
+          messageId,
+          userId: user._id,
+          conversationId: conversationId
+        });
+      }
+    }
+  };
+
+  // Thêm socket listener cho recall message
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    socketConnection.on("recall-message-success", (data) => {
+      toast.success("Đã thu hồi tin nhắn");
+    });
+
+    socketConnection.on("recall-message-error", (data) => {
+      toast.error(data.error);
+    });
+
+    return () => {
+      socketConnection.off("recall-message-success");
+      socketConnection.off("recall-message-error");
+    };
+  }, [socketConnection]);
+
   return (
     <div className="flex flex-col h-full">
       <ToastContainer />
@@ -942,144 +972,162 @@ function MessagePage() {
                         isCurrentUser ? "ml-auto bg-teal-300" : ""
                       } ${highlightedMessageId === msg._id ? 'bg-yellow-100' : ''}`}
                     >
-                      {/* Reply message display */}
-                      {msg.replyToMessage && (
-                        <div 
-                          className="bg-gray-100 rounded p-2 mb-2 text-sm cursor-pointer hover:bg-gray-200"
-                          onClick={() => {
-                            if (messageRefs.current[msg.replyToMessage._id]) {
-                              messageRefs.current[msg.replyToMessage._id].scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'center'
-                              });
-                              setHighlightedMessageId(msg.replyToMessage._id);
-                              setTimeout(() => setHighlightedMessageId(null), 1000);
-                            }
-                          }}
-                        >
-                          <div className="flex items-center gap-2">
-                            <HiReply className="text-gray-500" size={16} />
-                            <p className="font-medium text-gray-700">
-                              {msg.replyToMessage.msgByUserId._id === user._id ? "Bạn" : dataUser.name}
-                            </p>
-                          </div>
-                          <div className="pl-6">
-                            {msg.replyToMessage.text && (
-                              <p className="text-gray-600 line-clamp-2">{msg.replyToMessage.text}</p>
-                            )}
-                            {msg.replyToMessage.imageUrl && (
-                              <div className="flex items-center gap-1 text-gray-500">
-                                <FaImage size={12} />
-                                <span>Hình ảnh</span>
-                              </div>
-                            )}
-                            {msg.replyToMessage.videoUrl && (
-                              <div className="flex items-center gap-1 text-gray-500">
-                                <FaVideo size={12} />
-                                <span>Video</span>
-                              </div>
-                            )}
-                            {msg.replyToMessage.fileUrl && (
-                              <div className="flex items-center gap-1 text-gray-500">
-                                <FaFile size={12} />
-                                <span>{msg.replyToMessage.fileName || 'File'}</span>
-                              </div>
-                            )}
-                          </div>
+                      {/* Hiển thị tin nhắn đã thu hồi */}
+                      {msg.isRecalled ? (
+                        <div className="italic text-gray-500 px-2">
+                          {isCurrentUser ? "Bạn đã thu hồi một tin nhắn" : "Tin nhắn đã được thu hồi"}
                         </div>
-                      )}
-
-                      {/* Message content */}
-                      {msg.forwardFrom && (
-                        <ForwardedMessage message={msg.forwardFrom} />
-                      )}
-                      <div className="w-full">
-                        {msg?.imageUrl && (
-                          <img
-                            src={msg?.imageUrl}
-                            alt="uploadImage"
-                            width={300}
-                            height={300}
-                            className="w-full h-full object-scale-down"
-                          />
-                        )}
-                      </div>
-                      {msg?.videoUrl && (
-                        <video
-                          src={msg?.videoUrl}
-                          alt="uploadVideo"
-                          width={300}
-                          height={300}
-                          controls
-                          className="w-full h-full object-scale-down"
-                        />
-                      )}
-                      {msg?.fileUrl && (
-                        <div className="flex items-center gap-2 p-2 bg-gray-100 rounded">
-                          <FaFile className="text-blue-500" />
-                          <a 
-                            href={msg.fileUrl} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="text-blue-500 hover:underline truncate max-w-[200px]"
-                            title={msg.fileName || 'Tải file'}
-                          >
-                            {msg.fileName || 'Tải file'}
-                          </a>
-                        </div>
-                      )}
-
-                      <p className="px-2">{msg.text}</p>
-                      
-                      <div className="flex items-center justify-between px-2">
-                        <MessageReactions 
-                          message={msg}
-                          onReact={handleReaction}
-                          currentUserId={user._id}
-                        />
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs text-gray-500">
-                            {formatMessageTime(msg.createdAt)}
-                          </p>
-                          <div className="relative">
-                            <button
-                              onClick={() => setShowMessageMenu(showMessageMenu === msg._id ? null : msg._id)}
-                              className="p-1 hover:bg-gray-100 rounded-full"
+                      ) : (
+                        <>
+                          {/* Reply message display */}
+                          {msg.replyToMessage && (
+                            <div 
+                              className="bg-gray-100 rounded p-2 mb-2 text-sm cursor-pointer hover:bg-gray-200"
+                              onClick={() => {
+                                if (messageRefs.current[msg.replyToMessage._id]) {
+                                  messageRefs.current[msg.replyToMessage._id].scrollIntoView({
+                                    behavior: 'smooth',
+                                    block: 'center'
+                                  });
+                                  setHighlightedMessageId(msg.replyToMessage._id);
+                                  setTimeout(() => setHighlightedMessageId(null), 1000);
+                                }
+                              }}
                             >
-                              <HiDotsVertical size={16} />
-                            </button>
-                            {showMessageMenu === msg._id && (
-                              <div className="absolute right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[120px] z-10">
-                                <button
-                                  onClick={() => handleDeleteMessage(msg._id, msg?.msgByUserId?._id === user._id)}
-                                  className="w-full px-4 py-2 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2"
-                                >
-                                  <IoTrashOutline size={16} />
-                                  Xóa tin nhắn
-                                </button>
-                                <button
-                                  onClick={() => handleReplyMessage(msg)}
-                                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-                                >
-                                  <HiReply />
-                                  Trả lời
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setSelectedMessage(msg);
-                                    setShowForwardModal(true);
-                                    setShowMessageMenu(null);
-                                  }}
-                                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-                                >
-                                  <FaForward />
-                                  Chuyển tiếp
-                                </button>
+                              <div className="flex items-center gap-2">
+                                <HiReply className="text-gray-500" size={16} />
+                                <p className="font-medium text-gray-700">
+                                  {msg.replyToMessage.msgByUserId._id === user._id ? "Bạn" : dataUser.name}
+                                </p>
                               </div>
+                              <div className="pl-6">
+                                {msg.replyToMessage.text && (
+                                  <p className="text-gray-600 line-clamp-2">{msg.replyToMessage.text}</p>
+                                )}
+                                {msg.replyToMessage.imageUrl && (
+                                  <div className="flex items-center gap-1 text-gray-500">
+                                    <FaImage size={12} />
+                                    <span>Hình ảnh</span>
+                                  </div>
+                                )}
+                                {msg.replyToMessage.videoUrl && (
+                                  <div className="flex items-center gap-1 text-gray-500">
+                                    <FaVideo size={12} />
+                                    <span>Video</span>
+                                  </div>
+                                )}
+                                {msg.replyToMessage.fileUrl && (
+                                  <div className="flex items-center gap-1 text-gray-500">
+                                    <FaFile size={12} />
+                                    <span>{msg.replyToMessage.fileName || 'File'}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Message content */}
+                          {msg.forwardFrom && (
+                            <ForwardedMessage message={msg.forwardFrom} />
+                          )}
+                          <div className="w-full">
+                            {msg?.imageUrl && (
+                              <img
+                                src={msg?.imageUrl}
+                                alt="uploadImage"
+                                width={300}
+                                height={300}
+                                className="w-full h-full object-scale-down"
+                              />
                             )}
                           </div>
-                        </div>
-                      </div>
+                          {msg?.videoUrl && (
+                            <video
+                              src={msg?.videoUrl}
+                              alt="uploadVideo"
+                              width={300}
+                              height={300}
+                              controls
+                              className="w-full h-full object-scale-down"
+                            />
+                          )}
+                          {msg?.fileUrl && (
+                            <div className="flex items-center gap-2 p-2 bg-gray-100 rounded">
+                              <FaFile className="text-blue-500" />
+                              <a 
+                                href={msg.fileUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-blue-500 hover:underline truncate max-w-[200px]"
+                                title={msg.fileName || 'Tải file'}
+                              >
+                                {msg.fileName || 'Tải file'}
+                              </a>
+                            </div>
+                          )}
+
+                          <p className="px-2">{msg.text}</p>
+                          
+                          <div className="flex items-center justify-between px-2">
+                            <MessageReactions 
+                              message={msg}
+                              onReact={handleReaction}
+                              currentUserId={user._id}
+                            />
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs text-gray-500">
+                                {formatMessageTime(msg.createdAt)}
+                              </p>
+                              <div className="relative">
+                                <button
+                                  onClick={() => setShowMessageMenu(showMessageMenu === msg._id ? null : msg._id)}
+                                  className="p-1 hover:bg-gray-100 rounded-full"
+                                >
+                                  <HiDotsVertical size={16} />
+                                </button>
+                                {showMessageMenu === msg._id && (
+                                  <div className="absolute right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[120px] z-10">
+                                    {isCurrentUser && (
+                                      <button
+                                        onClick={() => handleRecallMessage(msg._id)}
+                                        className="w-full px-4 py-2 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2"
+                                      >
+                                        <IoTrashOutline size={16} />
+                                        Thu hồi
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => handleDeleteMessage(msg._id, msg?.msgByUserId?._id === user._id)}
+                                      className="w-full px-4 py-2 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2"
+                                    >
+                                      <IoTrashOutline size={16} />
+                                      Xóa tin nhắn
+                                    </button>
+                                    <button
+                                      onClick={() => handleReplyMessage(msg)}
+                                      className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                                    >
+                                      <HiReply />
+                                      Trả lời
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setSelectedMessage(msg);
+                                        setShowForwardModal(true);
+                                        setShowMessageMenu(null);
+                                      }}
+                                      className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                                    >
+                                      <FaForward />
+                                      Chuyển tiếp
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })}
