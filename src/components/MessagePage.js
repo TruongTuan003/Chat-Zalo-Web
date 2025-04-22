@@ -107,12 +107,16 @@ function MessagePage() {
 
   useEffect(() => {
     if (currentMessage.current) {
-      currentMessage.current.scrollIntoView({
-        behavior: "smooth",
-        block: "end",
-      });
+      // Chỉ cuộn khi có tin nhắn mới, không cuộn khi cập nhật reaction
+      const lastMessage = allMessage[allMessage.length - 1];
+      if (lastMessage && lastMessage.msgByUserId._id === user._id) {
+        currentMessage.current.scrollIntoView({
+          behavior: "smooth",
+          block: "end",
+        });
+      }
     }
-  }, [allMessage]);
+  }, [allMessage, user._id]);
 
   const handleUploadImage = async (e) => {
     const file = e.target.files[0];
@@ -439,7 +443,7 @@ function MessagePage() {
         toast.info("Đối phương đã hủy kết bạn");
       });
 
-      // Thêm listener cho reaction-updated
+      // Thêm socket listener cho reaction
       socketConnection.on("reaction-updated", (data) => {
         setAllMessage(prevMessages => 
           prevMessages.map(msg => {
@@ -452,7 +456,6 @@ function MessagePage() {
             return msg;
           })
         );
-        // Không cuộn khi cập nhật reaction
       });
 
       // Cleanup socket listeners
@@ -587,18 +590,15 @@ function MessagePage() {
   useEffect(() => {
     if (!socketConnection) return;
 
-    const handleReactionAdded = (data) => {
-      if (!data?.messageId || !data?.emoji) return;
+    const handleReactionUpdated = (data) => {
+      if (!data?.messageId || !data?.reactions) return;
 
       setAllMessage(prevMessages => 
         prevMessages.map(msg => {
           if (msg?._id === data.messageId) {
             return {
               ...msg,
-              reactions: {
-                ...(msg.reactions || {}),
-                [data.emoji]: ((msg.reactions || {})[data.emoji] || 0) + 1
-              }
+              reactions: data.reactions
             };
           }
           return msg;
@@ -606,10 +606,10 @@ function MessagePage() {
       );
     };
 
-    socketConnection.on("reaction_added", handleReactionAdded);
+    socketConnection.on("reaction-updated", handleReactionUpdated);
 
     return () => {
-      socketConnection.off("reaction_added", handleReactionAdded);
+      socketConnection.off("reaction-updated", handleReactionUpdated);
     };
   }, [socketConnection]);
 
