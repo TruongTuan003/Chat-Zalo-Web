@@ -117,17 +117,50 @@ function MessagePage() {
 
   const handleUploadImage = async (e) => {
     const file = e.target.files[0];
+    if (!file) return;
+
+    // Check if file is an image
+    if (!file.type.startsWith('image/')) {
+      toast.error('Vui lòng chọn file ảnh');
+      return;
+    }
 
     setLoading(true);
-    const uploadPhoto = await uploadFile(file);
-    setLoading(false);
-    setOpenImageVideoUpload(false);
+    try {
+      const uploadPhoto = await uploadFile(file);
+      setLoading(false);
+      setOpenImageVideoUpload(false);
 
-    setMassage((prev) => ({
-      ...prev,
-      imageUrl: uploadPhoto.url,
-    }));
+      // Gửi ảnh ngay lập tức
+      if (socketConnection) {
+        socketConnection.emit("new massage", {
+          sender: user?._id,
+          receiver: params.userId,
+          text: "",
+          imageUrl: uploadPhoto.url,
+          videoUrl: "",
+          fileUrl: "",
+          fileName: "",
+          msgByUserId: user._id,
+          replyTo: replyToMessage?._id
+        });
+      }
+
+      // Reset state
+      setMassage({
+        text: "",
+        imageUrl: "",
+        videoUrl: "",
+        fileUrl: "",
+        fileName: ""
+      });
+      setReplyToMessage(null);
+    } catch (error) {
+      setLoading(false);
+      toast.error('Không thể tải ảnh lên');
+    }
   };
+
   const hanldeClearUploadImage = () => {
     setMassage((prev) => ({
       ...prev,
@@ -202,7 +235,6 @@ function MessagePage() {
       });
 
       socketConnection.on("message", (data) => {
-        // Xử lý dữ liệu tin nhắn để thêm thông tin reply
         const processedMessages = data.map(msg => {
           if (msg.replyTo) {
             return {
@@ -220,10 +252,10 @@ function MessagePage() {
         setConversationId(data.conversationId);
       });
 
-      // Get contacts for forwarding
-      socketConnection.emit("get-contacts");
-      socketConnection.on("contacts", (data) => {
-        console.log("contacts data", data);
+      // Get friends list for forwarding
+      socketConnection.emit("get-friends");
+      socketConnection.on("friends", (data) => {
+        console.log("friends data", data);
         setContacts(data);
       });
 
@@ -334,7 +366,7 @@ function MessagePage() {
         socketConnection.off("message-user");
         socketConnection.off("message");
         socketConnection.off("conversation-id");
-        socketConnection.off("contacts");
+        socketConnection.off("friends");
         socketConnection.off("delete-message-success");
         socketConnection.off("error");
         socketConnection.off("search-messages-result");
@@ -432,12 +464,62 @@ function MessagePage() {
   };
 
   const handleReaction = (messageId, emoji) => {
-    if (socketConnection) {
-      socketConnection.emit("react_to_message", {
-        messageId,
-        emoji
-      });
-    }
+    if (!socketConnection || !user?._id) return;
+    
+    socketConnection.emit("react_to_message", {
+      messageId,
+      emoji,
+      userId: user._id
+    });
+  };
+
+  // Thêm socket listener cho reaction
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    const handleReactionAdded = (data) => {
+      if (!data?.messageId || !data?.emoji) return;
+
+      setAllMessage(prevMessages => 
+        prevMessages.map(msg => {
+          if (msg?._id === data.messageId) {
+            return {
+              ...msg,
+              reactions: {
+                ...(msg.reactions || {}),
+                [data.emoji]: ((msg.reactions || {})[data.emoji] || 0) + 1
+              }
+            };
+          }
+          return msg;
+        })
+      );
+    };
+
+    socketConnection.on("reaction_added", handleReactionAdded);
+
+    return () => {
+      socketConnection.off("reaction_added", handleReactionAdded);
+    };
+  }, [socketConnection]);
+
+  // Cập nhật phần hiển thị reaction
+  const renderReactions = (message) => {
+    if (!message?.reactions || Object.keys(message.reactions).length === 0) return null;
+    
+    return (
+      <div className="flex gap-1 mt-1">
+        {Object.entries(message.reactions).map(([emoji, count]) => (
+          <div 
+            key={emoji} 
+            className="bg-gray-100 px-2 py-1 rounded-full text-xs flex items-center gap-1"
+          >
+            <span>{emoji}</span>
+            <span>{count}</span>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   // Format message time
