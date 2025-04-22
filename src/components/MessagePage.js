@@ -311,6 +311,14 @@ function MessagePage() {
         }).filter(Boolean);
 
         setAllMessage(processedMessages);
+        
+        // Chỉ cuộn xuống cuối khi nhận tin nhắn mới
+        if (currentMessage.current) {
+          currentMessage.current.scrollIntoView({
+            behavior: "smooth",
+            block: "end",
+          });
+        }
       });
 
       // Get conversation ID
@@ -431,6 +439,22 @@ function MessagePage() {
         toast.info("Đối phương đã hủy kết bạn");
       });
 
+      // Thêm listener cho reaction-updated
+      socketConnection.on("reaction-updated", (data) => {
+        setAllMessage(prevMessages => 
+          prevMessages.map(msg => {
+            if (msg._id === data.messageId) {
+              return {
+                ...msg,
+                reactions: data.reactions
+              };
+            }
+            return msg;
+          })
+        );
+        // Không cuộn khi cập nhật reaction
+      });
+
       // Cleanup socket listeners
       return () => {
         socketConnection.off("message-user");
@@ -447,6 +471,7 @@ function MessagePage() {
         socketConnection.off("friend-request-sent");
         socketConnection.off("unfriend-success");
         socketConnection.off("unfriend-received");
+        socketConnection.off("reaction-updated");
       };
     }
   }, [socketConnection, params.userId, user, friendRequestStatus.isReceiver]);
