@@ -3,9 +3,9 @@ import { useSelector } from "react-redux";
 import { Link, useParams } from "react-router-dom";
 import Avatar from "./Avatar";
 import { HiDotsVertical, HiSearch, HiReply } from "react-icons/hi";
-import { FaAngleLeft, FaPlus, FaImage, FaVideo, FaFile } from "react-icons/fa6";
+import { FaAngleLeft, FaPlus, FaImage, FaVideo, FaFile, FaForward } from "react-icons/fa6";
 import uploadFile from "../helpers/uploadFile";
-import { IoClose } from "react-icons/io5";
+import { IoClose, IoTrashOutline } from "react-icons/io5";
 import { Loading } from "./Loading";
 import { IoMdSend } from "react-icons/io";
 import moment from "moment";
@@ -49,6 +49,7 @@ function MessagePage() {
 
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [contacts, setContacts] = useState([]);
+  const [selectedContacts, setSelectedContacts] = useState(new Set());
 
   const [friendRequestStatus, setFriendRequestStatus] = useState({
     isFriend: false,
@@ -79,6 +80,10 @@ function MessagePage() {
   const [showOptions, setShowOptions] = useState(false);
   const optionsRef = useRef(null);
 
+  const [showForwardModal, setShowForwardModal] = useState(false);
+
+  const [openImageVideoUpload, setOpenImageVideoUpload] = useState(false);
+
   const debouncedSearch = useCallback((value) => {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
@@ -108,12 +113,6 @@ function MessagePage() {
       });
     }
   }, [allMessage]);
-
-  const [openImageVideoUpload, setOpenImageVideoUpload] = useState(false);
-
-  const handleUploadImageVideoOpen = () => {
-    setOpenImageVideoUpload((preve) => !preve);
-  };
 
   const handleUploadImage = async (e) => {
     const file = e.target.files[0];
@@ -161,31 +160,56 @@ function MessagePage() {
     }
   };
 
-  const hanldeClearUploadImage = () => {
-    setMassage((prev) => ({
-      ...prev,
-      imageUrl: "",
-    }));
-  };
-
   const handleUploadVideo = async (e) => {
     const file = e.target.files[0];
+    if (!file) return;
+
+    // Check if file is a video
+    if (!file.type.startsWith('video/')) {
+      toast.error('Vui lòng chọn file video');
+      return;
+    }
+
+    // Check file size (limit to 50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error('File video quá lớn. Kích thước tối đa là 50MB');
+      return;
+    }
+
     setLoading(true);
-    const uploadPhoto = await uploadFile(file);
-    setLoading(false);
-    setOpenImageVideoUpload(false);
+    try {
+      const uploadResult = await uploadFile(file);
+      setLoading(false);
+      setOpenImageVideoUpload(false);
 
-    setMassage((prev) => ({
-      ...prev,
-      videoUrl: uploadPhoto.url,
-    }));
-  };
+      // Gửi video ngay lập tức
+      if (socketConnection) {
+        socketConnection.emit("new massage", {
+          sender: user?._id,
+          receiver: params.userId,
+          text: "",
+          imageUrl: "",
+          videoUrl: uploadResult.url,
+          fileUrl: "",
+          fileName: "",
+          msgByUserId: user._id,
+          replyTo: replyToMessage?._id
+        });
+      }
 
-  const hanldeClearUploadVideo = () => {
-    setMassage((prev) => ({
-      ...prev,
-      videoUrl: "",
-    }));
+      // Reset state
+      setMassage({
+        text: "",
+        imageUrl: "",
+        videoUrl: "",
+        fileUrl: "",
+        fileName: ""
+      });
+      setReplyToMessage(null);
+    } catch (error) {
+      setLoading(false);
+      toast.error('Không thể tải video lên');
+    }
   };
 
   const handleUploadFile = async (e) => {
@@ -204,15 +228,48 @@ function MessagePage() {
       setLoading(false);
       setOpenImageVideoUpload(false);
 
-      setMassage((prev) => ({
-        ...prev,
-        fileUrl: uploadResult.url,
-        fileName: file.name
-      }));
+      // Gửi file ngay lập tức
+      if (socketConnection) {
+        socketConnection.emit("new massage", {
+          sender: user?._id,
+          receiver: params.userId,
+          text: "",
+          imageUrl: "",
+          videoUrl: "",
+          fileUrl: uploadResult.url,
+          fileName: file.name,
+          msgByUserId: user._id,
+          replyTo: replyToMessage?._id
+        });
+      }
+
+      // Reset state
+      setMassage({
+        text: "",
+        imageUrl: "",
+        videoUrl: "",
+        fileUrl: "",
+        fileName: ""
+      });
+      setReplyToMessage(null);
     } catch (error) {
       setLoading(false);
-      toast.error('Không thể tải file lên. Vui lòng thử lại');
+      toast.error('Không thể tải file lên');
     }
+  };
+
+  const handleClearUploadImage = () => {
+    setMassage((prev) => ({
+      ...prev,
+      imageUrl: "",
+    }));
+  };
+
+  const hanldeClearUploadVideo = () => {
+    setMassage((prev) => ({
+      ...prev,
+      videoUrl: "",
+    }));
   };
 
   const handleClearUploadFile = () => {
@@ -235,15 +292,24 @@ function MessagePage() {
       });
 
       socketConnection.on("message", (data) => {
+        if (!Array.isArray(data)) {
+          console.error("Invalid message data received:", data);
+          return;
+        }
+
         const processedMessages = data.map(msg => {
-          if (msg.replyTo) {
-            return {
-              ...msg,
-              replyToMessage: msg.replyTo
-            };
+          if (!msg || typeof msg !== 'object') {
+            console.error("Invalid message object:", msg);
+            return null;
           }
-          return msg;
-        });
+
+          return {
+            ...msg,
+            replyToMessage: msg.replyTo,
+            forwardFrom: msg.forwardFrom || null
+          };
+        }).filter(Boolean);
+
         setAllMessage(processedMessages);
       });
 
@@ -453,13 +519,28 @@ function MessagePage() {
     }
   };
 
-  const handleForwardMessage = (messageId, receiverId) => {
-    if (socketConnection) {
-      socketConnection.emit("forward message", {
-        messageId,
-        sender: user._id,
-        receiver: receiverId
+  const handleForwardMessage = (messageId, receiverIds) => {
+    if (!socketConnection || !messageId || !receiverIds || receiverIds.size === 0) {
+      toast.error("Không thể chuyển tiếp tin nhắn. Vui lòng thử lại.");
+      return;
+    }
+
+    try {
+      receiverIds.forEach(receiverId => {
+        socketConnection.emit("forward message", {
+          messageId,
+          sender: user._id,
+          receiver: receiverId,
+          currentChatUserId: params.userId
+        });
       });
+      toast.success("Đã chuyển tiếp tin nhắn");
+      setShowMessageMenu(null);
+      setShowForwardModal(false);
+      setSelectedContacts(new Set());
+    } catch (error) {
+      console.error("Error forwarding message:", error);
+      toast.error("Có lỗi xảy ra khi chuyển tiếp tin nhắn");
     }
   };
 
@@ -697,6 +778,22 @@ function MessagePage() {
     };
   }, []);
 
+  const handleDeleteMessage = (messageId, isOwnMessage) => {
+    const confirmMessage = isOwnMessage 
+      ? "Bạn có chắc chắn muốn xóa tin nhắn này không?"
+      : "Bạn có chắc chắn muốn xóa tin nhắn này chỉ ở phía bạn không?";
+    
+    if (window.confirm(confirmMessage)) {
+      if (socketConnection) {
+        socketConnection.emit("delete-message", {
+          messageId,
+          senderId: user._id,
+          receiverId: dataUser._id
+        });
+      }
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <ToastContainer />
@@ -802,6 +899,11 @@ function MessagePage() {
             {friendRequestStatus.isFriend ? (
               <div className="flex flex-col gap-2 py-2 mx-2" ref={currentMessage}>
                 {allMessage.map((msg) => {
+                  if (!msg || !msg.msgByUserId) {
+                    console.warn("Invalid message object:", msg);
+                    return null;
+                  }
+
                   const isCurrentUser = msg.msgByUserId._id === user._id;
                   return (
                     <div
@@ -920,18 +1022,30 @@ function MessagePage() {
                             {showMessageMenu === msg._id && (
                               <div className="absolute right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[120px] z-10">
                                 <button
+                                  onClick={() => handleDeleteMessage(msg._id, msg?.msgByUserId?._id === user._id)}
+                                  className="w-full px-4 py-2 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2"
+                                >
+                                  <IoTrashOutline size={16} />
+                                  Xóa tin nhắn
+                                </button>
+                                <button
                                   onClick={() => handleReplyMessage(msg)}
                                   className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
                                 >
                                   <HiReply />
                                   Trả lời
                                 </button>
-                                <ForwardMessageMenu
-                                  onForward={handleForwardMessage}
-                                  contacts={contacts}
-                                  selectedMessage={msg}
-                                  currentChatUserId={params.userId}
-                                />
+                                <button
+                                  onClick={() => {
+                                    setSelectedMessage(msg);
+                                    setShowForwardModal(true);
+                                    setShowMessageMenu(null);
+                                  }}
+                                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
+                                >
+                                  <FaForward />
+                                  Chuyển tiếp
+                                </button>
                               </div>
                             )}
                           </div>
@@ -966,7 +1080,7 @@ function MessagePage() {
                 <div className="flex items-center gap-3">
                   <div className="relative">
                     <button
-                      onClick={handleUploadImageVideoOpen}
+                      onClick={() => setOpenImageVideoUpload(!openImageVideoUpload)}
                       className="flex justify-center items-center w-10 h-10 rounded-full hover:bg-gray-100"
                     >
                       <FaPlus size={20} className="text-gray-600" />
@@ -1193,6 +1307,86 @@ function MessagePage() {
           </div>
         )}
       </div>
+
+      {/* Forward Message Modal */}
+      {showForwardModal && selectedMessage && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg w-96 max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-semibold">Chuyển tiếp tin nhắn</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {contacts.length > 0 ? (
+                contacts.map((contact) => (
+                  <div
+                    key={contact._id}
+                    className={`flex items-center p-2 hover:bg-gray-100 rounded-lg cursor-pointer ${
+                      selectedContacts.has(contact._id) ? 'bg-blue-50' : ''
+                    }`}
+                    onClick={() => {
+                      setSelectedContacts(prev => {
+                        const newSet = new Set(prev);
+                        if (newSet.has(contact._id)) {
+                          newSet.delete(contact._id);
+                        } else {
+                          newSet.add(contact._id);
+                        }
+                        return newSet;
+                      });
+                    }}
+                  >
+                    <Avatar
+                      width={40}
+                      height={40}
+                      imageUrl={contact.profile_pic}
+                      name={contact.name}
+                      userId={contact._id}
+                    />
+                    <div className="ml-3 flex-1">
+                      <p className="font-medium">{contact.name}</p>
+                      <p className="text-sm text-gray-500">
+                        {contact.online ? 'Online' : 'Offline'}
+                      </p>
+                    </div>
+                    {selectedContacts.has(contact._id) && (
+                      <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm">
+                        ✓
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-gray-500">
+                  Không có người nhận khả dụng
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t flex justify-between items-center">
+              <span className="text-sm text-gray-500">
+                Đã chọn: {selectedContacts.size} người
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setShowForwardModal(false);
+                    setSelectedContacts(new Set());
+                  }}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                >
+                  Đóng
+                </button>
+                <button
+                  onClick={() => handleForwardMessage(selectedMessage._id, selectedContacts)}
+                  disabled={selectedContacts.size === 0}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Chuyển tiếp
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
