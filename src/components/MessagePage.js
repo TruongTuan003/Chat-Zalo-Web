@@ -328,6 +328,10 @@ function MessagePage() {
       // Listen for delete message success
       socketConnection.on("delete-message-success", (data) => {
         console.log("Message deleted successfully:", data.messageId);
+        // Cập nhật lại danh sách tin nhắn
+        setAllMessage(prevMessages => 
+          prevMessages.filter(msg => msg._id !== data.messageId)
+        );
         toast.success('Đã xóa tin nhắn thành công', {
           position: "top-right",
           autoClose: 3000,
@@ -787,8 +791,8 @@ function MessagePage() {
       if (socketConnection) {
         socketConnection.emit("delete-message", {
           messageId,
-          senderId: user._id,
-          receiverId: dataUser._id
+          userId: user._id,
+          conversationId: conversationId
         });
       }
     }
