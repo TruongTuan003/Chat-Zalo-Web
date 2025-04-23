@@ -307,8 +307,13 @@ function MessagePage() {
             return null;
           }
 
+          // Giữ lại trạng thái isRecalled từ tin nhắn hiện tại nếu có
+          const existingMessage = allMessage.find(m => m._id === msg._id);
+          const isRecalled = existingMessage ? existingMessage.isRecalled : msg.isRecalled;
+
           return {
             ...msg,
+            isRecalled: isRecalled,
             replyToMessage: msg.replyTo,
             forwardFrom: msg.forwardFrom || null
           };
@@ -458,6 +463,28 @@ function MessagePage() {
         );
       });
 
+      // Thêm socket listener cho recall message
+      socketConnection.on("recall-message-success", (data) => {
+        // Cập nhật lại danh sách tin nhắn
+        setAllMessage(prevMessages => 
+          prevMessages.map(msg => {
+            if (msg._id === data.messageId) {
+              return {
+                ...msg,
+                isRecalled: true
+              };
+            }
+            return msg;
+          })
+        );
+        toast.success("Đã thu hồi tin nhắn");
+        setShowMessageMenu(null); // Đóng menu sau khi thu hồi
+      });
+
+      socketConnection.on("recall-message-error", (data) => {
+        toast.error(data.error);
+      });
+
       // Cleanup socket listeners
       return () => {
         socketConnection.off("message-user");
@@ -475,6 +502,8 @@ function MessagePage() {
         socketConnection.off("unfriend-success");
         socketConnection.off("unfriend-received");
         socketConnection.off("reaction-updated");
+        socketConnection.off("recall-message-success");
+        socketConnection.off("recall-message-error");
       };
     }
   }, [socketConnection, params.userId, user, friendRequestStatus.isReceiver]);
@@ -835,24 +864,6 @@ function MessagePage() {
     }
   };
 
-  // Thêm socket listener cho recall message
-  useEffect(() => {
-    if (!socketConnection) return;
-
-    socketConnection.on("recall-message-success", (data) => {
-      toast.success("Đã thu hồi tin nhắn");
-    });
-
-    socketConnection.on("recall-message-error", (data) => {
-      toast.error(data.error);
-    });
-
-    return () => {
-      socketConnection.off("recall-message-success");
-      socketConnection.off("recall-message-error");
-    };
-  }, [socketConnection]);
-
   return (
     <div className="flex flex-col h-full">
       <ToastContainer />
@@ -972,7 +983,6 @@ function MessagePage() {
                         isCurrentUser ? "ml-auto bg-teal-300" : ""
                       } ${highlightedMessageId === msg._id ? 'bg-yellow-100' : ''}`}
                     >
-                      {/* Hiển thị tin nhắn đã thu hồi */}
                       {msg.isRecalled ? (
                         <div className="italic text-gray-500 px-2">
                           {isCurrentUser ? "Bạn đã thu hồi một tin nhắn" : "Tin nhắn đã được thu hồi"}
@@ -1087,7 +1097,7 @@ function MessagePage() {
                                 </button>
                                 {showMessageMenu === msg._id && (
                                   <div className="absolute right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[120px] z-10">
-                                    {isCurrentUser && (
+                                    {isCurrentUser && !msg.isRecalled && (
                                       <button
                                         onClick={() => handleRecallMessage(msg._id)}
                                         className="w-full px-4 py-2 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2"
