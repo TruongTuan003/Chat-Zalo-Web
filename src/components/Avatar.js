@@ -4,6 +4,7 @@ import { useSelector } from "react-redux";
 
 export const Avatar = ({ userId, name, imageUrl, width = 50, height = 50 }) => {
   const onlineUser = useSelector((state) => state?.user?.onlineUser);
+  const isOnline = onlineUser.includes(userId);
 
   let avatarName = "";
 
@@ -15,8 +16,6 @@ export const Avatar = ({ userId, name, imageUrl, width = 50, height = 50 }) => {
       avatarName = splitName[0][0]; // Lấy ký tự đầu tiên của tên
     }
   }
-
-  const isOnline = onlineUser.includes(userId);
 
   return (
     <div
@@ -48,7 +47,7 @@ export const Avatar = ({ userId, name, imageUrl, width = 50, height = 50 }) => {
       )}
 
       {isOnline && (
-        <div className="bg-green-600 p-2 absolute bottom-0 right-0  rounded-full"></div>
+        <div className="bg-green-600 p-2 absolute bottom-0 right-0 rounded-full"></div>
       )}
     </div>
   );

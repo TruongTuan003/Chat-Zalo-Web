@@ -979,8 +979,8 @@ function MessagePage() {
                     <div
                       key={msg._id}
                       ref={el => messageRefs.current[msg._id] = el}
-                      className={`bg-white p-1 py-2 rounded w-fit max-w-[280px] md:max-w-sm lg:max-w-md relative ${
-                        isCurrentUser ? "ml-auto bg-teal-300" : ""
+                      className={`p-1 py-2 rounded-lg w-fit max-w-[280px] md:max-w-sm lg:max-w-md relative ${
+                        isCurrentUser ? "ml-auto bg-[#E5EFFF] text-[#1B1B1B]" : "bg-white"
                       } ${highlightedMessageId === msg._id ? 'bg-yellow-100' : ''}`}
                     >
                       {msg.isRecalled ? (

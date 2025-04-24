@@ -3,6 +3,7 @@ import { IoChatbubbleEllipsesSharp } from "react-icons/io5";
 import { FaUserPlus } from "react-icons/fa";
 import { NavLink, useNavigate } from "react-router-dom";
 import { BiLogOut } from "react-icons/bi";
+import { FaUsers } from "react-icons/fa";
 import Avatar from "./Avatar";
 import { useDispatch, useSelector } from "react-redux";
 import EditUserDetails from "./EditUserDetails";
@@ -10,6 +11,7 @@ import { logout } from "../redux/userSlice";
 import { FiArrowUpLeft } from "react-icons/fi";
 import { SearchUser } from "./SearchUser";
 import { FaImage, FaVideo } from "react-icons/fa6";
+import { GroupChat } from "./GroupChat";
 
 export const Sidebar = () => {
   const user = useSelector((state) => state?.user);
@@ -19,6 +21,7 @@ export const Sidebar = () => {
   const socketConnection = useSelector(
     (state) => state?.user?.socketConnection
   );
+  const [openGroupChat, setOpenGroupChat] = useState(false);
 
   useEffect(() => {
     if (socketConnection) {
@@ -82,6 +85,13 @@ export const Sidebar = () => {
             className="w-12 h-12 flex justify-center items-center cursor-pointer hover:bg-slate-200"
           >
             <FaUserPlus size={20} />
+          </div>
+          <div
+            title="group chat"
+            onClick={() => setOpenGroupChat(true)}
+            className="w-12 h-12 flex justify-center items-center cursor-pointer hover:bg-slate-200"
+          >
+            <FaUsers size={20} />
           </div>
         </div>
         <div className="flex flex-col items-center">
@@ -189,6 +199,10 @@ export const Sidebar = () => {
       {/**search user */}
       {openSearchUser && (
         <SearchUser onClose={() => setOpenSearchUser(false)} />
+      )}
+      {/**group chat */}
+      {openGroupChat && (
+        <GroupChat onClose={() => setOpenGroupChat(false)} />
       )}
     </div>
   );
