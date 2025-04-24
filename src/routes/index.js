@@ -66,7 +66,10 @@ const router = createBrowserRouter([
       {
         path: "",
         element: <Home />,
-        children: [{ path: ":userId", element: <MessagePage /> }],
+        children: [
+          { path: ":userId", element: <MessagePage /> },
+          { path: "group/:groupId", element: <MessagePage /> }
+        ],
       },
     ],
   },

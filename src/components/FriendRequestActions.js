@@ -22,12 +22,11 @@ const FriendRequestActions = ({ userId, requestId }) => {
       if (response.data.success) {
         // Emit socket event for friend request response
         socketConnection.emit("friend-request-response", {
-          fromUserId: userId,
+          requestId: requestId,
           action: 'accept'
         });
 
         toast.success("Đã chấp nhận lời mời kết bạn!");
-        window.location.reload(); // Reload to update the UI
       }
     } catch (error) {
       toast.error(error?.response?.data?.message || "Có lỗi xảy ra");
@@ -50,12 +49,11 @@ const FriendRequestActions = ({ userId, requestId }) => {
       if (response.data.success) {
         // Emit socket event for friend request response
         socketConnection.emit("friend-request-response", {
-          fromUserId: userId,
+          requestId: requestId,
           action: 'reject'
         });
 
         toast.success("Đã từ chối lời mời kết bạn!");
-        window.location.reload(); // Reload to update the UI
       }
     } catch (error) {
       toast.error(error?.response?.data?.message || "Có lỗi xảy ra");

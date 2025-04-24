@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { IoClose } from "react-icons/io5";
 import { useDispatch, useSelector } from "react-redux";
+import { NavLink } from "react-router-dom";
 import Avatar from "./Avatar";
 import { FaSearch } from "react-icons/fa";
 import toast from "react-hot-toast";
@@ -127,30 +128,34 @@ export const GroupChat = ({ onClose }) => {
     return (
       <div className="space-y-2">
         {groups.map((group) => (
-          <div
+          <NavLink
             key={group._id}
-            className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg border"
+            to={`/group/${group._id}`}
+            className="block"
+            onClick={onClose}
           >
-            <Avatar
-              imageUrl={group.avatar}
-              name={group.name}
-              width={40}
-              height={40}
-            />
-            <div className="flex-1">
-              <h3 className="font-medium">{group.name}</h3>
-              <div className="flex items-center gap-2">
-                <p className="text-sm text-gray-500">
-                  {group.members?.length || 0} thành viên
-                </p>
-                {group.creator?._id === user._id && (
-                  <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded">
-                    Người tạo
-                  </span>
-                )}
+            <div className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg border">
+              <Avatar
+                imageUrl={group.avatar}
+                name={group.name}
+                width={40}
+                height={40}
+              />
+              <div className="flex-1">
+                <h3 className="font-medium">{group.name}</h3>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-gray-500">
+                    {group.members?.length || 0} thành viên
+                  </p>
+                  {group.creator?._id === user._id && (
+                    <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded">
+                      Người tạo
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          </NavLink>
         ))}
       </div>
     );
