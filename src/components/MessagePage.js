@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useSelector } from "react-redux";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import Avatar from "./Avatar";
 import { HiDotsVertical, HiSearch, HiReply } from "react-icons/hi";
-import { FaAngleLeft, FaPlus, FaImage, FaVideo, FaFile, FaForward } from "react-icons/fa6";
+import { FaAngleLeft, FaPlus, FaImage, FaVideo, FaFile, FaForward, FaUsers } from "react-icons/fa6";
 import uploadFile from "../helpers/uploadFile";
 import { IoClose, IoTrashOutline } from "react-icons/io5";
 import { Loading } from "./Loading";
@@ -18,10 +18,12 @@ import { format } from "date-fns";
 import { vi } from "date-fns/locale";
 import FriendRequestActions from "./FriendRequestActions";
 import axios from "axios";
-import { MdPersonRemove } from "react-icons/md";
+import { MdPersonRemove, MdDelete } from "react-icons/md";
+import GroupAvatar from "./GroupAvatar";
 
 function MessagePage() {
   const params = useParams();
+  const navigate = useNavigate();
   const socketConnection = useSelector(
     (state) => state?.user?.socketConnection
   );
@@ -86,6 +88,53 @@ function MessagePage() {
 
   const [openImageVideoUpload, setOpenImageVideoUpload] = useState(false);
 
+  const [showMembersModal, setShowMembersModal] = useState(false);
+  const [members, setMembers] = useState([]);
+
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
+
+  const messagesEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+
+  const scrollToBottom = (behavior = 'auto') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  };
+
+  // Handle auto scroll when new messages arrive
+  useEffect(() => {
+    if (shouldAutoScroll && allMessage.length > 0) {
+      scrollToBottom('smooth');
+    }
+  }, [allMessage, shouldAutoScroll]);
+
+  // Handle scroll events to determine if we should auto scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!scrollContainerRef.current) return;
+
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+      const isNearBottom = scrollHeight - (scrollTop + clientHeight) < 100;
+      setShouldAutoScroll(isNearBottom);
+    };
+
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.addEventListener('scroll', handleScroll);
+    }
+
+    return () => {
+      if (container) {
+        container.removeEventListener('scroll', handleScroll);
+      }
+    };
+  }, []);
+
+  // Scroll to bottom when first loading messages or changing chats
+  useEffect(() => {
+    scrollToBottom();
+  }, [params.userId, params.groupId]);
+
   const debouncedSearch = useCallback((value) => {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
@@ -93,20 +142,22 @@ function MessagePage() {
 
     searchTimeoutRef.current = setTimeout(() => {
       if (value.trim()) {
-        if (!conversationId) {
-          console.log("No conversationId available, cannot search");
+        if (!conversationId && !params.groupId) {
+          console.log("No conversationId or groupId available, cannot search");
           toast.error("Không thể tìm kiếm trong cuộc trò chuyện này");
           return;
         }
         
-        console.log("Searching for:", value, "in conversation:", conversationId);
+        console.log("Searching for:", value);
         setIsSearching(true);
         setShowSearchResults(false);
         
         socketConnection.emit("search-messages", {
           search: value,
-          conversationId: conversationId,
-          currentUserId: user._id
+          conversationId: params.groupId ? undefined : conversationId,
+          groupId: params.groupId,
+          currentUserId: user._id,
+          isGroupChat: !!params.groupId
         });
       } else {
         setShowSearchResults(false);
@@ -114,7 +165,7 @@ function MessagePage() {
         setSearchResults([]);
       }
     }, 300);
-  }, [conversationId, socketConnection, user._id]);
+  }, [conversationId, socketConnection, user._id, params.groupId]);
 
   useEffect(() => {
     if (currentMessage.current) {
@@ -147,6 +198,25 @@ function MessagePage() {
 
       // Gửi ảnh ngay lập tức
       if (socketConnection) {
+        if (params.groupId) {
+          // Nếu là chat nhóm
+          socketConnection.emit("group-message", {
+            groupId: params.groupId,
+            text: "",
+            sender: user._id,
+            imageUrl: uploadPhoto.url,
+            videoUrl: "",
+            fileUrl: "",
+            fileName: "",
+            replyTo: replyToMessage?._id,
+            msgByUserId: {
+              _id: user._id,
+              name: user.name,
+              profile_pic: user.profile_pic
+            }
+          });
+        } else {
+          // Nếu là chat đơn
         socketConnection.emit("new massage", {
           sender: user?._id,
           receiver: params.userId,
@@ -158,6 +228,7 @@ function MessagePage() {
           msgByUserId: user._id,
           replyTo: replyToMessage?._id
         });
+        }
       }
 
       // Reset state
@@ -199,6 +270,25 @@ function MessagePage() {
 
       // Gửi video ngay lập tức
       if (socketConnection) {
+        if (params.groupId) {
+          // Nếu là chat nhóm
+          socketConnection.emit("group-message", {
+            groupId: params.groupId,
+            text: "",
+            sender: user._id,
+            imageUrl: "",
+            videoUrl: uploadResult.url,
+            fileUrl: "",
+            fileName: "",
+            replyTo: replyToMessage?._id,
+            msgByUserId: {
+              _id: user._id,
+              name: user.name,
+              profile_pic: user.profile_pic
+            }
+          });
+        } else {
+          // Nếu là chat đơn
         socketConnection.emit("new massage", {
           sender: user?._id,
           receiver: params.userId,
@@ -210,6 +300,7 @@ function MessagePage() {
           msgByUserId: user._id,
           replyTo: replyToMessage?._id
         });
+        }
       }
 
       // Reset state
@@ -245,6 +336,25 @@ function MessagePage() {
 
       // Gửi file ngay lập tức
       if (socketConnection) {
+        if (params.groupId) {
+          // Nếu là chat nhóm
+          socketConnection.emit("group-message", {
+            groupId: params.groupId,
+            text: "",
+            sender: user._id,
+            imageUrl: "",
+            videoUrl: "",
+            fileUrl: uploadResult.url,
+            fileName: file.name,
+            replyTo: replyToMessage?._id,
+            msgByUserId: {
+              _id: user._id,
+              name: user.name,
+              profile_pic: user.profile_pic
+            }
+          });
+        } else {
+          // Nếu là chat đơn
         socketConnection.emit("new massage", {
           sender: user?._id,
           receiver: params.userId,
@@ -256,6 +366,7 @@ function MessagePage() {
           msgByUserId: user._id,
           replyTo: replyToMessage?._id
         });
+        }
       }
 
       // Reset state
@@ -314,11 +425,17 @@ function MessagePage() {
       setAllMessage([]);
 
       if (isGroupChat) {
-        console.log("Requesting group info for:", params.groupId); // Debug log
+        console.log("Requesting group info for:", params.groupId);
         
         // Handle group chat
         socketConnection.emit("get-group-messages", params.groupId);
         socketConnection.emit("get-group-info", params.groupId);
+        
+        // Mark messages as seen when entering group chat
+        socketConnection.emit("seen-group-message", {
+          groupId: params.groupId,
+          userId: user._id
+        });
         
         // Listen for group messages
         const handleGroupMessages = (data) => {
@@ -329,12 +446,12 @@ function MessagePage() {
               text: msg.text,
               sender: msg.msgByUserId?.name
             }))
-          }); // Debug log
+          });
           
-          if (!Array.isArray(data)) {
+        if (!Array.isArray(data)) {
             console.error("Invalid group messages data received:", data);
-            return;
-          }
+          return;
+        }
 
           // Sort messages by createdAt
           const sortedMessages = [...data].sort((a, b) => 
@@ -346,27 +463,95 @@ function MessagePage() {
 
         // Listen for new group messages
         const handleNewGroupMessage = (data) => {
-          console.log("Received new group message:", data); // Debug log
-          if (!data) return;
+          try {
+            // Debug log
+            console.log("Group message received:", {
+              data,
+              currentGroupId: params.groupId,
+              isSystemMessage: data?.isSystemMessage
+            });
 
-          setAllMessage(prevMessages => {
-            // Check if message already exists
-            const messageExists = prevMessages.some(msg => msg._id === data._id);
-            if (messageExists) return prevMessages;
+            // Validate data
+            if (!data) {
+              console.warn("Received empty group message data");
+              return;
+            }
 
-            // Add new message to the end
-            const newMessages = [...prevMessages, data];
-            
-            // Sort messages by createdAt
-            return newMessages.sort((a, b) => 
-              new Date(a.createdAt) - new Date(b.createdAt)
-            );
-          });
+            // Special handling for system messages (member leave/join)
+            if (data.isSystemMessage) {
+              console.log("Processing system message:", data);
+              
+              // Update messages first
+              if (params.groupId) {
+                setAllMessage(prevMessages => {
+                  if (!Array.isArray(prevMessages)) return [data];
+                  if (prevMessages.some(msg => msg._id === data._id)) return prevMessages;
+                  return [...prevMessages, data].sort((a, b) => 
+                    new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+                  );
+                });
+
+                // Then update group info
+                setTimeout(() => {
+                  socketConnection.emit("get-group-info", params.groupId);
+                }, 100);
+              }
+              return;
+            }
+
+            // Handle regular messages
+            if (!data.groupId && !params.groupId) {
+              console.warn("Missing group ID for regular message");
+              return;
+            }
+
+            const messageGroupId = String(data.groupId || '');
+            const currentGroupId = String(params.groupId || '');
+
+            if (!messageGroupId || !currentGroupId) {
+              console.warn("Invalid group IDs:", { messageGroupId, currentGroupId });
+              return;
+            }
+
+            // Only process if message is for current group
+            if (messageGroupId === currentGroupId) {
+              setAllMessage(prevMessages => {
+                // Ensure we have valid messages array
+                if (!Array.isArray(prevMessages)) {
+                  return [data];
+                }
+
+                // Check for duplicates
+                if (prevMessages.some(msg => msg._id === data._id)) {
+                  return prevMessages;
+                }
+
+                const newMessages = [...prevMessages, data];
+                
+                // Sort messages safely
+                return newMessages.sort((a, b) => {
+                  const timeA = new Date(a.createdAt || 0).getTime();
+                  const timeB = new Date(b.createdAt || 0).getTime();
+                  return timeA - timeB;
+                });
+              });
+
+              // Scroll to bottom for new messages
+              setTimeout(() => {
+                scrollToBottom('smooth');
+              }, 100);
+            }
+          } catch (error) {
+            console.error("Error handling group message:", error, {
+              messageData: data,
+              currentParams: params
+            });
+          }
         };
 
         // Listen for group info
         const handleGroupInfo = (data) => {
-          console.log("Received group info:", data); // Debug log
+          console.log("Received group info:", data);
           if (data) {
             setDataUser({
               name: data.name,
@@ -380,28 +565,16 @@ function MessagePage() {
           }
         };
 
-        // Request messages again if we don't have any
-        const checkMessages = () => {
-          if (allMessage.length === 0) {
-            console.log("No messages found, requesting again...");
-            socketConnection.emit("get-group-messages", params.groupId);
-          }
-        };
-
         // Set up listeners
         socketConnection.on("group-messages", handleGroupMessages);
         socketConnection.on("group-message", handleNewGroupMessage);
         socketConnection.on("group-info", handleGroupInfo);
 
-        // Check messages after a short delay to allow initial load
-        const messageCheckTimeout = setTimeout(checkMessages, 1000);
-
-        // Cleanup listeners and timeout
+        // Cleanup listeners
         return () => {
           socketConnection.off("group-messages", handleGroupMessages);
           socketConnection.off("group-message", handleNewGroupMessage);
           socketConnection.off("group-info", handleGroupInfo);
-          clearTimeout(messageCheckTimeout);
         };
       } else {
         // Handle private chat
@@ -495,13 +668,13 @@ function MessagePage() {
       socketConnection.on("new-friend-request", (data) => {
         console.log("New friend request received:", data);
         if (data.sender._id === params.userId) {
-          setFriendRequestStatus(prev => ({
-            ...prev,
-            hasPendingRequest: true,
-            requestId: data.requestId,
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          hasPendingRequest: true,
+          requestId: data.requestId,
             isReceiver: true,
             sender: data.sender
-          }));
+        }));
           toast.success(`Bạn có lời mời kết bạn từ ${data.sender.name}`);
         }
       });
@@ -510,12 +683,12 @@ function MessagePage() {
       socketConnection.on("friend-request-accepted", (data) => {
         console.log("Friend request accepted:", data);
         if (data.friend._id === params.userId) {
-          setFriendRequestStatus(prev => ({
-            ...prev,
-            isFriend: true,
-            hasPendingRequest: false,
-            requestId: null
-          }));
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          isFriend: true,
+          hasPendingRequest: false,
+          requestId: null
+        }));
           setDataUser(prev => ({
             ...prev,
             isFriend: true
@@ -528,11 +701,11 @@ function MessagePage() {
       socketConnection.on("friend-request-rejected", (data) => {
         console.log("Friend request rejected:", data);
         if (data.sender._id === params.userId) {
-          setFriendRequestStatus(prev => ({
-            ...prev,
-            hasPendingRequest: false,
-            requestId: null
-          }));
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          hasPendingRequest: false,
+          requestId: null
+        }));
           toast.info(`${data.sender.name} đã từ chối lời mời kết bạn`);
         }
       });
@@ -541,29 +714,29 @@ function MessagePage() {
       socketConnection.on("unfriend-success", (data) => {
         console.log("Unfriend success:", data);
         if (data.targetUserId === params.userId) {
-          setFriendRequestStatus(prev => ({
-            ...prev,
-            isFriend: false,
-            hasPendingRequest: false,
-            requestId: null
-          }));
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          isFriend: false,
+          hasPendingRequest: false,
+          requestId: null
+        }));
           setDataUser(prev => ({
             ...prev,
             isFriend: false
-          }));
-          toast.success("Đã hủy kết bạn");
+        }));
+        toast.success("Đã hủy kết bạn");
         }
       });
 
       socketConnection.on("unfriend-received", (data) => {
         console.log("Unfriend received:", data);
         if (data.targetUserId === params.userId) {
-          setFriendRequestStatus(prev => ({
-            ...prev,
-            isFriend: false,
-            hasPendingRequest: false,
-            requestId: null
-          }));
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          isFriend: false,
+          hasPendingRequest: false,
+          requestId: null
+        }));
           setDataUser(prev => ({
             ...prev,
             isFriend: false
@@ -628,6 +801,8 @@ function MessagePage() {
         socketConnection.off("reaction-updated");
         socketConnection.off("recall-message-success");
         socketConnection.off("recall-message-error");
+        socketConnection.off("react_to_message");
+        socketConnection.off("react_to_group_message");
       };
     }
   }, [socketConnection, params.userId, params.groupId, user._id]);
@@ -695,11 +870,9 @@ function MessagePage() {
     if (message.text || message.imageUrl || message.videoUrl || message.fileUrl) {
       if (socketConnection) {
         const isGroupChat = params.groupId;
-        console.log("Sending message to:", isGroupChat ? "group" : "private chat"); // Debug log
         
         if (isGroupChat) {
-          // Send group message
-          console.log("Emitting group message:", {
+          const messageData = {
             groupId: params.groupId,
             text: message.text,
             sender: user._id,
@@ -707,33 +880,32 @@ function MessagePage() {
             videoUrl: message.videoUrl,
             fileUrl: message.fileUrl,
             fileName: message.fileName,
-            replyTo: replyToMessage?._id
-          }); // Debug log
+            replyTo: replyToMessage?._id,
+            msgByUserId: {
+              _id: user._id,
+              name: user.name,
+              profile_pic: user.profile_pic
+            }
+          };
 
-          socketConnection.emit("group-message", {
-            groupId: params.groupId,
-            text: message.text,
-            sender: user._id,
-            imageUrl: message.imageUrl,
-            videoUrl: message.videoUrl,
-            fileUrl: message.fileUrl,
-            fileName: message.fileName,
-            replyTo: replyToMessage?._id
-          });
+          // Emit the message
+          socketConnection.emit("group-message", messageData);
         } else {
           // Send private message
-          socketConnection.emit("new massage", {
-            sender: user?._id,
-            receiver: params.userId,
-            text: message.text,
-            imageUrl: message.imageUrl,
-            videoUrl: message.videoUrl,
-            fileUrl: message.fileUrl,
-            fileName: message.fileName,
-            msgByUserId: user._id,
-            replyTo: replyToMessage?._id
-          });
+        socketConnection.emit("new massage", {
+          sender: user?._id,
+          receiver: params.userId,
+          text: message.text,
+          imageUrl: message.imageUrl,
+          videoUrl: message.videoUrl,
+          fileUrl: message.fileUrl,
+          fileName: message.fileName,
+          msgByUserId: user._id,
+          replyTo: replyToMessage?._id
+        });
         }
+
+        // Clear the message input
         setMassage({
           text: "",
           imageUrl: "",
@@ -771,57 +943,93 @@ function MessagePage() {
     }
   };
 
-  const handleReaction = (messageId, emoji) => {
+  // Thêm useEffect để xử lý reaction
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    const handleReactionUpdated = (data) => {
+      console.log("Received reaction update:", data);
+      
+      if (!data || !data.messageId || !data.reactions) {
+        console.error("Invalid reaction data received:", data);
+        return;
+      }
+
+      setAllMessage(prevMessages => {
+        const updatedMessages = prevMessages.map(msg => {
+          if (msg._id === data.messageId) {
+            console.log("Updating message reactions:", {
+              messageId: msg._id,
+              oldReactions: msg.reactions,
+              newReactions: data.reactions
+            });
+            return {
+              ...msg,
+              reactions: data.reactions
+            };
+          }
+          return msg;
+        });
+
+        console.log("Messages after reaction update:", updatedMessages);
+        return updatedMessages;
+      });
+    };
+
+    const handleGroupMessages = (messages) => {
+      console.log("Received group messages update:", messages);
+      if (Array.isArray(messages) && messages.length > 0) {
+        setAllMessage(messages);
+      }
+    };
+
+    socketConnection.on("reaction-updated", handleReactionUpdated);
+    socketConnection.on("group-messages", handleGroupMessages);
+
+    return () => {
+      socketConnection.off("reaction-updated", handleReactionUpdated);
+      socketConnection.off("group-messages", handleGroupMessages);
+    };
+  }, [socketConnection]);
+
+  const handleReaction = useCallback((messageId, emoji) => {
     if (!socketConnection || !user?._id) return;
     
+    console.log("Sending reaction:", { messageId, emoji, userId: user._id });
     socketConnection.emit("react_to_message", {
       messageId,
       emoji,
       userId: user._id
     });
-  };
+  }, [socketConnection, user?._id]);
 
-  // Thêm socket listener cho reaction
-  useEffect(() => {
-    if (!socketConnection) return;
+  // Hàm hiển thị reaction cho tin nhắn
+  const renderMessageReactions = (message) => {
+    if (!message?.reactions || message.reactions.length === 0) return null;
 
-    const handleReactionUpdated = (data) => {
-      if (!data?.messageId || !data?.reactions) return;
-
-      setAllMessage(prevMessages => 
-        prevMessages.map(msg => {
-          if (msg?._id === data.messageId) {
-            return {
-              ...msg,
-              reactions: data.reactions,
-              isReactionUpdate: true
-            };
-          }
-          return msg;
-        })
-      );
-    };
-
-    socketConnection.on("reaction-updated", handleReactionUpdated);
-
-    return () => {
-      socketConnection.off("reaction-updated", handleReactionUpdated);
-    };
-  }, [socketConnection]);
-
-  // Cập nhật phần hiển thị reaction
-  const renderReactions = (message) => {
-    if (!message?.reactions || Object.keys(message.reactions).length === 0) return null;
+    // Nhóm các reaction theo emoji
+    const reactionGroups = message.reactions.reduce((groups, reaction) => {
+      const emoji = reaction.emoji;
+      if (!groups[emoji]) {
+        groups[emoji] = [];
+      }
+      groups[emoji].push(reaction);
+      return groups;
+    }, {});
     
     return (
-      <div className="flex gap-1 mt-1">
-        {Object.entries(message.reactions).map(([emoji, count]) => (
+      <div className="flex flex-wrap gap-1 mt-1">
+        {Object.entries(reactionGroups).map(([emoji, reactions]) => (
           <div 
             key={emoji} 
-            className="bg-gray-100 px-2 py-1 rounded-full text-xs flex items-center gap-1"
+            className="bg-gray-100 px-2 py-1 rounded-full text-xs flex items-center gap-1 cursor-pointer hover:bg-gray-200"
+            title={reactions.map(r => {
+              const isCurrentUser = r.userId === user._id;
+              return isCurrentUser ? "Bạn" : dataUser.members?.find(m => m._id === r.userId)?.name || "Người dùng";
+            }).join(", ")}
           >
             <span>{emoji}</span>
-            <span>{count}</span>
+            <span>{reactions.length}</span>
           </div>
         ))}
       </div>
@@ -916,15 +1124,9 @@ function MessagePage() {
       return;
     }
     
-    if (value && value.trim() && conversationId) {
+    if (value && value.trim()) {
       console.log('Initiating search with:', value);
-      setIsSearching(true);
-      setShowSearchResults(false); // Reset results while searching
-      socketConnection.emit('search-messages', {
-        search: value,
-        conversationId: conversationId,
-        currentUserId: user._id
-      });
+    debouncedSearch(value);
     } else {
       setShowSearchResults(false);
       setSearchResults([]);
@@ -1144,15 +1346,677 @@ function MessagePage() {
     }
   }, [socketConnection]);
 
+  // Sửa lại hàm lấy danh sách thành viên
+  const handleViewMembers = () => {
+    setShowMembersModal(true);
+    setShowOptions(false); // Close the options menu
+  };
+
+  const handleAddMembers = async (selectedMembers) => {
+    if (!selectedMembers || selectedMembers.length === 0) {
+      toast.error("Vui lòng chọn thành viên để thêm vào nhóm");
+      return;
+    }
+
+    socketConnection.emit("add-members-to-group", {
+      groupId: dataUser._id,
+      newMembers: selectedMembers.map(member => member._id),
+      addedBy: user._id
+    });
+  };
+
+  // Lắng nghe kết quả thêm thành viên
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    socketConnection.on("add-members-success", (data) => {
+      toast.success("Đã thêm thành viên vào nhóm thành công");
+      setShowMembersModal(false);
+    });
+
+    socketConnection.on("add-members-error", (data) => {
+      toast.error(data.message);
+    });
+
+    return () => {
+      socketConnection.off("add-members-success");
+      socketConnection.off("add-members-error");
+    };
+  }, [socketConnection]);
+
+  // Sửa lại Modal hiển thị thành viên
+  const MembersModal = () => {
+    const [friends, setFriends] = useState([]);
+    const [selectedMembers, setSelectedMembers] = useState([]);
+
+    // Add kick member handler
+    const handleKickMember = (memberId) => {
+      if (window.confirm("Bạn có chắc chắn muốn xóa thành viên này khỏi nhóm?")) {
+        socketConnection.emit("kick-member", {
+          groupId: dataUser._id,
+          memberId: memberId,
+          adminId: user._id
+        });
+      }
+    };
+
+    useEffect(() => {
+      if (!socketConnection) return;
+
+      socketConnection.on("kick-member-success", (data) => {
+        toast.success("Đã xóa thành viên khỏi nhóm");
+        // Update group info to reflect changes
+        socketConnection.emit("get-group-info", params.groupId);
+      });
+
+      socketConnection.on("kick-member-error", (error) => {
+        toast.error(error.message || "Không thể xóa thành viên khỏi nhóm");
+      });
+
+      return () => {
+        socketConnection.off("kick-member-success");
+        socketConnection.off("kick-member-error");
+      };
+    }, [socketConnection, params.groupId]);
+
+    useEffect(() => {
+      if (!socketConnection) return;
+
+      socketConnection.emit("get-friends");
+
+      socketConnection.on("friends", (data) => {
+        // Lọc ra những người chưa là thành viên của nhóm
+        const nonMembers = data.filter(friend => 
+          !dataUser.members.some(member => member._id === friend._id)
+        );
+        setFriends(nonMembers);
+      });
+
+      return () => {
+        socketConnection.off("friends");
+      };
+    }, [socketConnection]);
+
+    const handleSelectMember = (friend) => {
+      if (selectedMembers.some(member => member._id === friend._id)) {
+        setSelectedMembers(selectedMembers.filter(member => member._id !== friend._id));
+      } else {
+        setSelectedMembers([...selectedMembers, friend]);
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto relative">
+          <div className="flex justify-between items-center mb-4 sticky top-0 bg-white pb-2 border-b">
+            <h2 className="text-xl font-semibold">Thành viên nhóm</h2>
+            <button
+              onClick={() => setShowMembersModal(false)}
+              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+              title="Đóng"
+            >
+              <span className="text-xl font-medium text-gray-500">&times;</span>
+            </button>
+          </div>
+
+          <div className="mb-6">
+            <h3 className="font-medium mb-2">Thành viên hiện tại:</h3>
+            <div className="space-y-2">
+              {dataUser.members.map((member) => (
+                <div key={member._id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <img
+                      src={member.profile_pic}
+                      alt={member.name}
+                      className="w-10 h-10 rounded-full"
+                    />
+                    <div className="flex flex-col">
+                      <span className="font-medium">{member.name}</span>
+                      {member._id === dataUser.creator._id && (
+                        <span className="text-xs text-blue-600">(Người tạo nhóm)</span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Show kick button only if current user is admin and target is not admin or self */}
+                  {dataUser.creator._id === user._id && 
+                   member._id !== user._id && 
+                   member._id !== dataUser.creator._id && (
+                    <button
+                      onClick={() => handleKickMember(member._id)}
+                      className="text-red-500 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-colors"
+                      title="Xóa khỏi nhóm"
+                    >
+                      <MdPersonRemove size={20} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {dataUser.creator._id === user._id && (
+            <>
+              <div className="border-t pt-4">
+                <h3 className="font-medium mb-2">Thêm thành viên:</h3>
+                <div className="space-y-2">
+                  {friends.map((friend) => (
+                    <div
+                      key={friend._id}
+                      className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded-lg cursor-pointer"
+                      onClick={() => handleSelectMember(friend)}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedMembers.some(member => member._id === friend._id)}
+                        onChange={() => {}}
+                        className="w-4 h-4"
+                      />
+                      <img
+                        src={friend.profile_pic}
+                        alt={friend.name}
+                        className="w-10 h-10 rounded-full"
+                      />
+                      <span className="font-medium">{friend.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 flex justify-end sticky bottom-0 bg-white pt-2 border-t">
+                <button
+                  onClick={() => handleAddMembers(selectedMembers)}
+                  className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                  disabled={selectedMembers.length === 0}
+                >
+                  Thêm thành viên
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  useEffect(() => {
+    if (socketConnection) {
+      socketConnection.on("onlineUser", (users) => {
+        setOnlineUsers(new Set(users));
+      });
+
+      return () => {
+        socketConnection.off("onlineUser");
+      };
+    }
+  }, [socketConnection]);
+
+  // Thêm hàm xử lý xóa nhóm
+  const handleDeleteGroup = () => {
+    if (window.confirm("Bạn có chắc chắn muốn xóa nhóm này không?")) {
+      socketConnection.emit("delete-group", {
+        groupId: params.groupId,
+        userId: user._id
+      });
+    }
+    setShowOptions(false);
+  };
+
+  // Thêm socket listener cho delete group
+  useEffect(() => {
+    if (socketConnection) {
+      // ... existing socket listeners ...
+
+      socketConnection.on("group-deleted", (data) => {
+        if (data.success) {
+          toast.success("Nhóm đã được xóa thành công");
+          // Emit event để cập nhật lại danh sách nhóm
+          socketConnection.emit("get-user-groups");
+          // Chuyển về trang chủ ngay lập tức
+          setTimeout(() => {
+            navigate("/");
+          }, 0);
+        } else {
+          toast.error(data.message || "Có lỗi xảy ra khi xóa nhóm");
+        }
+      });
+
+      return () => {
+        // ... existing cleanup ...
+        socketConnection.off("group-deleted");
+      };
+    }
+  }, [socketConnection, navigate]);
+
+  // Add new useEffect for handling scroll and marking messages as seen
+  useEffect(() => {
+    const handleScroll = () => {
+      if (params.groupId) {
+        socketConnection?.emit("seen-group-message", {
+          groupId: params.groupId,
+          userId: user._id
+        });
+      }
+    };
+
+    const messageContainer = document.querySelector('.scrollbar');
+    if (messageContainer) {
+      messageContainer.addEventListener('scroll', handleScroll);
+    }
+
+    return () => {
+      if (messageContainer) {
+        messageContainer.removeEventListener('scroll', handleScroll);
+      }
+    };
+  }, [params.groupId, socketConnection, user._id]);
+
+  // Add new useEffect to handle auto-marking messages as seen
+  useEffect(() => {
+    if (!socketConnection || !params.groupId) return;
+
+    const handleNewGroupMessage = (data) => {
+      // Automatically mark messages as seen if the user is in the group chat
+      if (data.groupId.toString() === params.groupId.toString()) {
+        socketConnection.emit("seen-group-message", {
+          groupId: params.groupId,
+          userId: user._id
+        });
+      }
+    };
+
+    socketConnection.on("group-message", handleNewGroupMessage);
+
+    return () => {
+      socketConnection.off("group-message", handleNewGroupMessage);
+    };
+  }, [socketConnection, params.groupId, user._id]);
+
+  // Add new useEffect for private chat seen status
+  useEffect(() => {
+    if (!socketConnection || !params.userId) return;
+
+    const handleNewPrivateMessage = (data) => {
+      // If the message is from the current chat partner and we're viewing the chat
+      const messages = Array.isArray(data) ? data : [data];
+      const hasNewMessage = messages.some(msg => 
+        msg.msgByUserId?._id === params.userId && !msg.seen
+      );
+
+      if (hasNewMessage) {
+        socketConnection.emit("seen", params.userId);
+      }
+    };
+
+    socketConnection.on("message", handleNewPrivateMessage);
+
+    return () => {
+      socketConnection.off("message", handleNewPrivateMessage);
+    };
+  }, [socketConnection, params.userId, user._id]);
+
+  // Update the leave group handler
+  const handleLeaveGroup = () => {
+    if (!socketConnection || !params.groupId || !user?._id) return;
+
+    socketConnection.emit("leave-group", {
+      groupId: params.groupId,
+      userId: user._id
+    });
+  };
+
+  // Add socket listeners for leave group events
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    // Handle successful leave group
+    socketConnection.on("leave-group-success", (data) => {
+      toast.success("Đã rời khỏi nhóm thành công");
+      navigate("/");
+    });
+
+    // Handle leave group error
+    socketConnection.on("leave-group-error", (data) => {
+      toast.error(data.message || "Có lỗi xảy ra khi rời nhóm");
+    });
+
+    // Handle when other member leaves
+    socketConnection.on("group-member-left", (data) => {
+      if (data.groupId === params.groupId) {
+        // Update messages list with system message
+        setAllMessage(prevMessages => {
+          if (!Array.isArray(prevMessages)) return [data.message];
+          if (prevMessages.some(msg => msg._id === data.message._id)) return prevMessages;
+          
+          const newMessages = [...prevMessages, data.message];
+          return newMessages.sort((a, b) => 
+            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+          );
+        });
+
+        // Update group info
+        socketConnection.emit("get-group-info", params.groupId);
+      }
+    });
+
+    return () => {
+      socketConnection.off("leave-group-success");
+      socketConnection.off("leave-group-error");
+      socketConnection.off("group-member-left");
+    };
+  }, [socketConnection, params.groupId, navigate]);
+
+  const handleNewGroupMessage = (data) => {
+    try {
+      // Debug log
+      console.log("Group message received:", {
+        data,
+        currentGroupId: params.groupId,
+        isSystemMessage: data?.isSystemMessage
+      });
+
+      // Validate data
+      if (!data) {
+        console.warn("Received empty group message data");
+        return;
+      }
+
+      // For system messages, just update the messages list
+      if (data.isSystemMessage) {
+        console.log("Processing system message:", data);
+        
+        setAllMessage(prevMessages => {
+          if (!Array.isArray(prevMessages)) return [data];
+          if (prevMessages.some(msg => msg._id === data._id)) return prevMessages;
+          
+          const newMessages = [...prevMessages, data];
+          return newMessages.sort((a, b) => 
+            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+          );
+        });
+        return;
+      }
+
+      // For regular messages
+      const messageGroupId = data.groupId ? String(data.groupId) : null;
+      const currentGroupId = params.groupId ? String(params.groupId) : null;
+
+      if (!messageGroupId || !currentGroupId) {
+        console.warn("Missing group ID:", { messageGroupId, currentGroupId });
+        return;
+      }
+
+      // Only process if message is for current group
+      if (messageGroupId === currentGroupId) {
+        setAllMessage(prevMessages => {
+          if (!Array.isArray(prevMessages)) return [data];
+          if (prevMessages.some(msg => msg._id === data._id)) return prevMessages;
+
+          const newMessages = [...prevMessages, data];
+          return newMessages.sort((a, b) => 
+            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+          );
+        });
+
+        setTimeout(() => scrollToBottom('smooth'), 100);
+      }
+    } catch (error) {
+      console.error("Error handling group message:", error, {
+        messageData: data,
+        currentParams: params
+      });
+    }
+  };
+
+  // Set up message listener
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    console.log("Setting up group message listener", {
+      groupId: params.groupId,
+      hasSocket: !!socketConnection
+    });
+
+    socketConnection.on("group-message", handleNewGroupMessage);
+    
+    return () => {
+      socketConnection.off("group-message", handleNewGroupMessage);
+    };
+  }, [socketConnection, params.groupId]);
+
+  // Add this new function to handle group updates
+  const handleGroupMemberLeft = useCallback((data) => {
+    console.log("Member left group:", data);
+    
+    // Update messages immediately with the system message
+    if (data.systemMessage) {
+      setAllMessage(prevMessages => {
+        const newMessages = Array.isArray(prevMessages) ? [...prevMessages] : [];
+        if (!newMessages.some(msg => msg._id === data.systemMessage._id)) {
+          newMessages.push(data.systemMessage);
+          newMessages.sort((a, b) => 
+            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+          );
+        }
+        return newMessages;
+      });
+    }
+
+    // Update group info
+    if (data.groupId === params.groupId) {
+      socketConnection.emit("get-group-info", params.groupId);
+    }
+  }, [params.groupId, socketConnection]);
+
+  // Update the useEffect for socket listeners
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    // Handle group member left event
+    socketConnection.on("group-member-left", handleGroupMemberLeft);
+
+    // Handle group messages
+    socketConnection.on("group-message", (data) => {
+      try {
+        console.log("Group message received:", {
+          messageData: data,
+          currentGroup: params.groupId
+        });
+
+        if (!data) return;
+
+        // For system messages about member leaving
+        if (data.isSystemMessage && data.type === 'member-left') {
+          handleGroupMemberLeft({
+            groupId: data.groupId,
+            systemMessage: data
+          });
+          return;
+        }
+
+        // For other messages
+        const messageGroupId = data.groupId?.toString() || '';
+        const currentGroupId = params.groupId?.toString() || '';
+
+        if (messageGroupId && currentGroupId && messageGroupId === currentGroupId) {
+          setAllMessage(prevMessages => {
+            const messages = Array.isArray(prevMessages) ? prevMessages : [];
+            if (messages.some(msg => msg._id === data._id)) return messages;
+
+            const newMessages = [...messages, data];
+            return newMessages.sort((a, b) => 
+              new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+            );
+          });
+
+          // Scroll to bottom for new messages
+          setTimeout(() => scrollToBottom('smooth'), 100);
+        }
+      } catch (error) {
+        console.error("Error handling group message:", error);
+      }
+    });
+
+    // Clean up listeners
+    return () => {
+      socketConnection.off("group-member-left", handleGroupMemberLeft);
+      socketConnection.off("group-message");
+    };
+  }, [socketConnection, params.groupId, handleGroupMemberLeft, scrollToBottom]);
+
+  const renderMessage = (message, index) => {
+    // Check if it's a system message about member changes
+    const isMemberChangeMessage = message.isSystemMessage && 
+      (message.text?.includes("đã rời khỏi nhóm") || 
+       message.text?.includes("đã thêm") || 
+       message.text?.includes("vào nhóm"));
+
+    return (
+      <div
+        key={message._id}
+        ref={index === allMessage.length - 1 ? currentMessage : null}
+        className={`flex ${
+          message.msgByUserId?._id === user._id ? "justify-end" : "justify-start"
+        } mb-4 relative group`}
+      >
+        {/* For system messages about member changes, show centered text without any actions */}
+        {isMemberChangeMessage ? (
+          <div className="flex justify-center w-full">
+            <div className="bg-gray-100 rounded-lg px-4 py-2 text-sm text-gray-600">
+              {message.text}
+            </div>
+          </div>
+        ) : (
+          // Regular message rendering
+          <>
+            {message.msgByUserId?._id !== user._id && (
+              <div className="flex-shrink-0 mr-2">
+                <img
+                  src={message.msgByUserId?.profile_pic}
+                  alt={message.msgByUserId?.name}
+                  className="w-8 h-8 rounded-full"
+                />
+              </div>
+            )}
+            <div className={`flex flex-col ${
+              message.msgByUserId?._id === user._id ? "items-end" : "items-start"
+            }`}>
+              {/* Existing message content rendering */}
+              <div className="relative group">
+                {/* Message content */}
+                <div
+                  className={`px-4 py-2 rounded-lg ${
+                    message.msgByUserId?._id === user._id
+                      ? "bg-blue-500 text-white"
+                      : "bg-gray-200"
+                  } ${message.replyTo ? "mt-2" : ""}`}
+                >
+                  {message.replyTo && (
+                    <ReplyPreview message={message.replyTo} />
+                  )}
+                  {/* Rest of your message content rendering */}
+                  {message.text && <p>{message.text}</p>}
+                  {message.imageUrl && (
+                    <img
+                      src={message.imageUrl}
+                      alt="Sent"
+                      className="max-w-xs rounded-lg mt-2"
+                    />
+                  )}
+                  {message.videoUrl && (
+                    <video
+                      controls
+                      className="max-w-xs rounded-lg mt-2"
+                    >
+                      <source src={message.videoUrl} type="video/mp4" />
+                    </video>
+                  )}
+                  {message.fileUrl && (
+                    <div className="flex items-center mt-2">
+                      <i className="fas fa-file mr-2"></i>
+                      <a
+                        href={message.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:underline"
+                      >
+                        {message.fileName || "Tải xuống"}
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                {/* Only show actions for non-system messages */}
+                <div className={`absolute ${
+                  message.msgByUserId?._id === user._id
+                    ? "left-0 -translate-x-full"
+                    : "right-0 translate-x-full"
+                } top-0 hidden group-hover:flex items-center space-x-2 px-2`}>
+                  <button
+                    onClick={() => handleReplyMessage(message)}
+                    className="text-gray-500 hover:text-blue-500"
+                  >
+                    <i className="fas fa-reply"></i>
+                  </button>
+                  {message.msgByUserId?._id === user._id && (
+                    <>
+                      <button
+                        onClick={() => handleRecallMessage(message._id)}
+                        className="text-gray-500 hover:text-red-500"
+                      >
+                        <i className="fas fa-undo"></i>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteMessage(message._id, true)}
+                        className="text-gray-500 hover:text-red-500"
+                      >
+                        <i className="fas fa-trash"></i>
+                      </button>
+                    </>
+                  )}
+                  {message.msgByUserId?._id !== user._id && (
+                    <button
+                      onClick={() => handleDeleteMessage(message._id, false)}
+                      className="text-gray-500 hover:text-red-500"
+                    >
+                      <i className="fas fa-times"></i>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Message info (time, reactions, etc.) */}
+              <div className={`flex items-center mt-1 text-xs text-gray-500 ${
+                message.msgByUserId?._id === user._id ? "justify-end" : "justify-start"
+              }`}>
+                <span>{formatMessageTime(message.createdAt)}</span>
+                {message.seen && message.msgByUserId?._id === user._id && (
+                  <span className="ml-1 text-blue-500">
+                    <i className="fas fa-check-double"></i>
+                  </span>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col h-full">
       <ToastContainer />
-      <header className="sticky top-0 h-16 bg-white flex justify-between items-center px-4">
+      <header className="sticky top-0 h-16 bg-white flex justify-between items-center px-4 z-50">
         <div className="flex items-center gap-4">
           <Link to={"/"} className="lg:hidden">
             <FaAngleLeft size={25} />
           </Link>
           <div>
+            {dataUser?.isGroup ? (
+              <GroupAvatar
+                members={dataUser?.members || []}
+                size={50}
+              />
+            ) : (
             <Avatar
               width={50}
               height={50}
@@ -1160,6 +2024,7 @@ function MessagePage() {
               name={dataUser?.name}
               userId={dataUser?._id}
             />
+            )}
           </div>
           <div>
             <h3 className="font-semibold text-lg my-0">{dataUser?.name}</h3>
@@ -1218,7 +2083,7 @@ function MessagePage() {
             </button>
           )}
 
-          <div className="relative" ref={optionsRef}>
+          <div className="relative z-[9999]" ref={optionsRef}>
             <button 
               onClick={() => setShowOptions(!showOptions)}
               className="cursor-pointer p-2 hover:bg-gray-100 rounded-full"
@@ -1227,7 +2092,36 @@ function MessagePage() {
             </button>
             
             {showOptions && (
-              <div className="absolute right-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[150px] z-[60]">
+              <div className="fixed right-4 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[150px] z-[9999]">
+                {params.groupId && (
+                  <>
+                    <button
+                      onClick={handleViewMembers}
+                      className="w-full px-4 py-3 text-left text-sm hover:bg-gray-100 flex items-center gap-2 transition-colors duration-200"
+                    >
+                      <FaUsers size={20} />
+                      <span>Xem thành viên</span>
+                    </button>
+                    {/* Chỉ hiển thị nút xóa nhóm cho quản trị viên */}
+                    {dataUser?.creator?._id === user._id ? (
+                      <button
+                        onClick={handleDeleteGroup}
+                        className="w-full px-4 py-3 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2 transition-colors duration-200"
+                      >
+                        <MdDelete size={20} />
+                        <span>Xóa nhóm</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleLeaveGroup}
+                        className="w-full px-4 py-3 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2 transition-colors duration-200"
+                      >
+                        <MdPersonRemove size={20} />
+                        <span>Rời nhóm</span>
+                      </button>
+                    )}
+                  </>
+                )}
                 {!params.groupId && friendRequestStatus.isFriend && (
                   <button
                     onMouseDown={handleUnfriend}
@@ -1243,13 +2137,16 @@ function MessagePage() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1">
         {/* Main chat area */}
-        <div className={`flex-1 ${isSearchExpanded ? 'w-2/3' : 'w-full'}`}>
+        <div className={`flex-1 ${isSearchExpanded ? 'w-2/3' : 'w-full'} relative z-0`}>
           {/** show all message */}
-          <section className="h-[calc(100vh-128px)] overflow-hidden overflow-y-scroll scrollbar relative z-0">
+          <section 
+            ref={scrollContainerRef}
+            className="h-[calc(100vh-128px)] overflow-y-scroll scrollbar"
+          >
             {(params.groupId || friendRequestStatus.isFriend) ? (
-              <div className="flex flex-col gap-2 py-2 mx-2" ref={currentMessage}>
+              <div className="flex flex-col gap-2 py-2 mx-2">
                 {allMessage.map((msg) => {
                   if (!msg || !msg.msgByUserId) {
                     console.warn("Invalid message object:", msg);
@@ -1437,22 +2334,23 @@ function MessagePage() {
                     </div>
                   );
                 })}
+                <div ref={messagesEndRef} />
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center">
                 <div className="text-center space-y-4">
                   {!params.groupId && (
                     <>
-                      <p className="text-gray-500">Các bạn chưa là bạn bè</p>
-                      {!friendRequestStatus.isFriend && !friendRequestStatus.hasPendingRequest && (
-                        <button 
-                          onClick={handleSendFriendRequest}
-                          className="bg-primary text-white px-6 py-2 rounded-full hover:bg-blue-600 transition-colors disabled:opacity-50"
-                        >
-                          {loading ? "Đang xử lý..." : "Gửi lời mời kết bạn"}
-                        </button>
-                      )}
-                      <p className="text-gray-500">Hãy kết bạn để bắt đầu trò chuyện</p>
+                  <p className="text-gray-500">Các bạn chưa là bạn bè</p>
+                  {!friendRequestStatus.isFriend && !friendRequestStatus.hasPendingRequest && (
+                    <button 
+                      onClick={handleSendFriendRequest}
+                      className="bg-primary text-white px-6 py-2 rounded-full hover:bg-blue-600 transition-colors disabled:opacity-50"
+                    >
+                      {loading ? "Đang xử lý..." : "Gửi lời mời kết bạn"}
+                    </button>
+                  )}
+                  <p className="text-gray-500">Hãy kết bạn để bắt đầu trò chuyện</p>
                     </>
                   )}
                 </div>
@@ -1571,7 +2469,7 @@ function MessagePage() {
 
         {/* Search panel */}
         {isSearchExpanded && (
-          <div className="w-1/3 border-l-2 border-gray-300 flex flex-col h-[calc(100vh-64px)] bg-gray-50">
+          <div className="w-1/3 border-l-2 border-gray-300 flex flex-col h-[calc(100vh-64px)] bg-gray-50 z-10">
             <div className="p-4 border-b border-gray-200 bg-white sticky top-0 z-10 shadow-sm">
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
@@ -1697,7 +2595,7 @@ function MessagePage() {
 
       {/* Forward Message Modal */}
       {showForwardModal && selectedMessage && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[100] flex items-center justify-center">
           <div className="bg-white rounded-lg w-96 max-h-[80vh] flex flex-col">
             <div className="p-4 border-b">
               <h3 className="text-lg font-semibold">Chuyển tiếp tin nhắn</h3>
@@ -1774,6 +2672,8 @@ function MessagePage() {
           </div>
         </div>
       )}
+
+      {showMembersModal && <MembersModal />}
     </div>
   );
 }

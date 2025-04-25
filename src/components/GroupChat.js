@@ -5,6 +5,8 @@ import { NavLink } from "react-router-dom";
 import Avatar from "./Avatar";
 import { FaSearch } from "react-icons/fa";
 import toast from "react-hot-toast";
+import { SearchUser } from "./SearchUser";
+import GroupAvatar from "./GroupAvatar";
 
 export const GroupChat = ({ onClose }) => {
   const [groupName, setGroupName] = useState("");
@@ -20,6 +22,20 @@ export const GroupChat = ({ onClose }) => {
 
   useEffect(() => {
     if (!socketConnection || !user?._id) return;
+
+    // Add connection error handler
+    socketConnection.on("connect_error", (error) => {
+      console.error("Socket connection error:", error);
+      toast.error("Kết nối bị gián đoạn. Đang thử kết nối lại...");
+    });
+
+    // Add reconnection handler
+    socketConnection.on("reconnect", (attemptNumber) => {
+      console.log("Socket reconnected after", attemptNumber, "attempts");
+      toast.success("Đã kết nối lại thành công");
+      // Fetch groups again after reconnection
+      socketConnection.emit("get-user-groups");
+    });
 
     // Hàm để lấy danh sách nhóm
     const fetchGroups = () => {
@@ -102,6 +118,8 @@ export const GroupChat = ({ onClose }) => {
 
     // Cleanup function
     return () => {
+      socketConnection.off("connect_error");
+      socketConnection.off("reconnect");
       socketConnection.off("friends");
       socketConnection.off("user-groups");
       socketConnection.off("new-group");
@@ -135,11 +153,9 @@ export const GroupChat = ({ onClose }) => {
             onClick={onClose}
           >
             <div className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-lg border">
-              <Avatar
-                imageUrl={group.avatar}
-                name={group.name}
-                width={40}
-                height={40}
+              <GroupAvatar
+                members={group.members || []}
+                size={40}
               />
               <div className="flex-1">
                 <h3 className="font-medium">{group.name}</h3>
@@ -162,6 +178,11 @@ export const GroupChat = ({ onClose }) => {
   };
 
   const handleCreateGroup = () => {
+    if (!socketConnection) {
+      toast.error("Không thể kết nối đến máy chủ. Vui lòng thử lại sau.");
+      return;
+    }
+
     if (!groupName.trim()) {
       toast.error("Vui lòng nhập tên nhóm");
       return;
@@ -171,12 +192,55 @@ export const GroupChat = ({ onClose }) => {
       return;
     }
 
-    if (socketConnection) {
+    // Validate that all selected users exist in allUser list
+    const invalidUsers = selectedUsers.filter(userId => 
+      !allUser.some(user => user._id === userId)
+    );
+
+    if (invalidUsers.length > 0) {
+      toast.error("Có thành viên không hợp lệ. Vui lòng chọn lại.");
+      return;
+    }
+
+    try {
+      // Ensure we're sending valid user IDs
+      const validMemberIds = selectedUsers.filter(userId => 
+        typeof userId === 'string' && userId.length > 0
+      );
+
+      if (validMemberIds.length !== selectedUsers.length) {
+        toast.error("Có lỗi với danh sách thành viên. Vui lòng thử lại.");
+        return;
+      }
+
       socketConnection.emit("create-group", {
         name: groupName,
-        members: selectedUsers,
+        members: validMemberIds,
         creator: user._id
       });
+
+      // Add timeout to handle potential connection issues
+      const timeout = setTimeout(() => {
+        toast.error("Không nhận được phản hồi từ máy chủ. Vui lòng thử lại.");
+      }, 10000);
+
+      // Clear timeout when we get a response
+      socketConnection.once("group-created", () => {
+        clearTimeout(timeout);
+      });
+
+      socketConnection.once("error", (error) => {
+        clearTimeout(timeout);
+        console.error("Error creating group:", error);
+        if (error.includes("thành viên không tồn tại")) {
+          toast.error("Có thành viên không tồn tại. Vui lòng chọn lại.");
+        } else {
+          toast.error("Có lỗi xảy ra khi tạo nhóm. Vui lòng thử lại.");
+        }
+      });
+    } catch (error) {
+      console.error("Error in handleCreateGroup:", error);
+      toast.error("Có lỗi xảy ra khi tạo nhóm. Vui lòng thử lại.");
     }
   };
 
@@ -300,6 +364,15 @@ export const GroupChat = ({ onClose }) => {
                   )}
                 </div>
               ))}
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Xem trước avatar nhóm
+              </label>
+              <div className="flex justify-center">
+                <GroupAvatar members={selectedUsers} size={80} />
+              </div>
             </div>
 
             <div className="flex justify-between items-center mt-4">

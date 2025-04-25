@@ -12,52 +12,170 @@ import { FiArrowUpLeft } from "react-icons/fi";
 import { SearchUser } from "./SearchUser";
 import { FaImage, FaVideo } from "react-icons/fa6";
 import { GroupChat } from "./GroupChat";
+import GroupAvatar from "./GroupAvatar";
 
 export const Sidebar = () => {
   const user = useSelector((state) => state?.user);
   const [editUserOpen, setEditUserOpen] = useState(false);
   const [allUser, setAllUser] = useState([]);
   const [openSearchUser, setOpenSearchUser] = useState(false);
+  const [openGroupChat, setOpenGroupChat] = useState(false);
+  const [conversation, setConversation] = useState([]);
+  const [groups, setGroups] = useState([]);
   const socketConnection = useSelector(
     (state) => state?.user?.socketConnection
   );
-  const [openGroupChat, setOpenGroupChat] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (socketConnection) {
-      socketConnection.emit("sidebar", user._id);
+      socketConnection.emit("sidebar", user?._id);
+      socketConnection.emit("get-user-groups");
+
+      socketConnection.on("conversation", (data) => {
+        setConversation(data);
+      });
+
+      socketConnection.on("user-groups", (data) => {
+        setGroups(data);
+      });
+
+      // Listen for group deletion
+      socketConnection.on("group-deleted", (data) => {
+        if (data.success) {
+          // Update groups list immediately
+          socketConnection.emit("get-user-groups");
+          // Nếu đang ở trong group bị xóa, chuyển về trang chủ
+          const currentPath = window.location.pathname;
+          if (currentPath.includes(`/group/${data.groupId}`)) {
+            navigate("/");
+          }
+        }
+      });
 
       socketConnection.on("conversation", (data) => {
         console.log("conversation", data);
 
-        const conversationUserData = data.map((conversationUser, index) => {
-          if (
-            conversationUser?.sender?._id === conversationUser?.receiver?._id
-          ) {
+        const conversationUserData = data.map((conversationUser) => {
+          if (!conversationUser) return null;
+
+          if (conversationUser?.sender?._id === conversationUser?.receiver?._id) {
             return {
               ...conversationUser,
-              userDetails: conversationUser?.sender,
+              userDetails: conversationUser?.sender || {},
+              isGroup: false,
+              lastMessageTime: conversationUser?.lastMsg?.createdAt || new Date(0)
             };
           } else if (conversationUser?.receiver?._id !== user?._id) {
             return {
               ...conversationUser,
-              userDetails: conversationUser.receiver,
+              userDetails: conversationUser?.receiver || {},
+              isGroup: false,
+              lastMessageTime: conversationUser?.lastMsg?.createdAt || new Date(0)
             };
           } else {
             return {
               ...conversationUser,
-              userDetails: conversationUser.sender,
+              userDetails: conversationUser?.sender || {},
+              isGroup: false,
+              lastMessageTime: conversationUser?.lastMsg?.createdAt || new Date(0)
             };
           }
-        });
+        }).filter(Boolean);
 
-        setAllUser(conversationUserData);
+        setAllUser(prev => {
+          const groups = prev.filter(chat => chat?.isGroup);
+          const combined = [...groups, ...conversationUserData];
+          return combined.sort((a, b) => new Date(b?.lastMessageTime || 0) - new Date(a?.lastMessageTime || 0));
+        });
       });
+
+      socketConnection.on("user-groups", (groups) => {
+        console.log("groups", groups);
+        const groupsWithMessages = groups.filter(group => group.lastMessage);
+        
+        const groupData = groupsWithMessages.map(group => ({
+          _id: group._id,
+          userDetails: {
+            _id: group._id,
+            name: group.name,
+            profile_pic: group.avatar || "",
+          },
+          lastMsg: group.lastMessage,
+          unseenMsg: group.unseenMessages?.find(
+            um => um.userId.toString() === user._id.toString()
+          )?.count || 0,
+          isGroup: true,
+          members: group.members,
+          lastMessageTime: group.lastMessage?.createdAt || group.createdAt || new Date(0)
+        }));
+
+        setAllUser(prev => {
+          const privateChats = prev.filter(chat => !chat.isGroup);
+          const combined = [...privateChats, ...groupData];
+          return combined.sort((a, b) => new Date(b?.lastMessageTime || 0) - new Date(a?.lastMessageTime || 0));
+        });
+      });
+
+      // Thêm listener cho tin nhắn nhóm mới
+      socketConnection.on("group-message", (data) => {
+        console.log("Received group message:", data);
+        setAllUser(prev => {
+          const updatedList = prev.map(chat => {
+            if (chat.isGroup && chat._id === data.groupId) {
+              // Tăng số tin nhắn chưa đọc nếu không phải người gửi
+              const newUnseenMsg = data.msgByUserId._id !== user._id ? 
+                (chat.unseenMsg || 0) + 1 : 
+                chat.unseenMsg || 0;
+
+              return {
+                ...chat,
+                lastMsg: {
+                  text: data.text,
+                  imageUrl: data.imageUrl,
+                  videoUrl: data.videoUrl,
+                  fileUrl: data.fileUrl,
+                  fileName: data.fileName,
+                  createdAt: data.createdAt
+                },
+                unseenMsg: newUnseenMsg,
+                lastMessageTime: data.createdAt
+              };
+            }
+            return chat;
+          });
+
+          // Sắp xếp lại theo thời gian tin nhắn mới nhất
+          return updatedList.sort((a, b) => new Date(b?.lastMessageTime || 0) - new Date(a?.lastMessageTime || 0));
+        });
+      });
+
+      // Thêm event handler cho seen-group-message
+      const handleGroupMessageSeen = () => {
+        const currentGroupId = window.location.pathname.split('/group/')[1];
+        if (currentGroupId) {
+          socketConnection.emit("seen-group-message", {
+            groupId: currentGroupId,
+            userId: user._id
+          });
+        }
+      };
+
+      // Gọi handleGroupMessageSeen khi vào group chat
+      const pathname = window.location.pathname;
+      if (pathname.startsWith('/group/')) {
+        handleGroupMessageSeen();
+      }
+
+      return () => {
+        socketConnection.off("conversation");
+        socketConnection.off("user-groups");
+        socketConnection.off("group-deleted");
+      };
     }
-  }, [socketConnection, user]);
+  }, [socketConnection, user?._id, navigate]);
 
   const dispatch = useDispatch();
-  const navigate = useNavigate();
 
   const handleLogout = () => {
     dispatch(logout());
@@ -137,25 +255,36 @@ export const Sidebar = () => {
               </p>
             </div>
           )}
-          {allUser.map((conv, index) => {
+          {allUser.filter(Boolean).map((conv, index) => {
+            if (!conv?.userDetails) return null;
+            
             return (
               <NavLink
-                to={"/" + conv?.userDetails?._id}
-                key={conv?._id}
+                to={conv?.isGroup ? `/group/${conv?.userDetails?._id}` : `/${conv?.userDetails?._id}`}
+                key={conv?._id || index}
                 className="flex items-center gap-2 py-3 px-2 border border-transparent hover:border-slate-300 rounded hover:bg-slate-100"
               >
                 <div>
-                  <Avatar
-                    imageUrl={conv?.userDetails?.profile_pic}
-                    name={conv?.userDetails?.name}
-                    width={40}
-                    height={40}
-                  />
+                  {conv.isGroup ? (
+                    <GroupAvatar 
+                      members={conv.members || []} 
+                      size={40} 
+                    />
+                  ) : (
+                    <Avatar
+                      imageUrl={conv?.userDetails?.profile_pic}
+                      name={conv?.userDetails?.name}
+                      width={40}
+                      height={40}
+                    />
+                  )}
                 </div>
-                <div>
-                  <h3 className="text-ellipsis line-clamp-1 font-semibold text-sm text-base">
-                    {conv?.userDetails?.name}
-                  </h3>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-ellipsis line-clamp-1 font-semibold text-sm text-base">
+                      {conv?.userDetails?.name || 'Unknown'}
+                    </h3>
+                  </div>
                   <div className="text-slate-500 text-xs flex items-center gap-2">
                     <div className="flex items-center gap-2">
                       {conv?.lastMsg?.imageUrl && (
