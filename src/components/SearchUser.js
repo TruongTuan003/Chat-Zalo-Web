@@ -33,10 +33,10 @@ export const SearchUser = ({ onClose }) => {
 
   console.log("searchUser", searchUser);
   return (
-    <div className="fixed top-0 bottom-0 left-0 right-0 bg-slate-700 bg-opacity-40 p-2 z-10">
+    <div className="fixed top-0 bottom-0 left-0 right-0 bg-slate-700 bg-opacity-40 p-2 z-[9999]">
       <div className="w-full max-w-lg mx-auto mt-10">
         {/**input search user */}
-        <div className="bg-white rounded h-14 overflow-hidden flex ">
+        <div className="bg-white rounded h-14 overflow-hidden flex relative">
           <input
             className="w-full outline-none py-1 h-full px-4"
             type="text"
@@ -69,14 +69,12 @@ export const SearchUser = ({ onClose }) => {
             })}
         </div>
       </div>
-      <div
-        className="absolute top-0 right-0 text-2xl p-2 lg:text-4xl hover:text-white"
+      <button
         onClick={onClose}
+        className="absolute top-2 right-2 text-2xl p-2 lg:text-4xl text-white hover:text-gray-300 transition-colors z-[10000]"
       >
-        <button>
-          <IoClose />
-        </button>
-      </div>
+        <IoClose />
+      </button>
     </div>
   );
 };
