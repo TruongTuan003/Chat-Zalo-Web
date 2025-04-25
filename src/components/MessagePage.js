@@ -918,29 +918,144 @@ function MessagePage() {
     }
   };
 
-  const handleForwardMessage = (messageId, receiverIds) => {
-    if (!socketConnection || !messageId || !receiverIds || receiverIds.size === 0) {
-      toast.error("Không thể chuyển tiếp tin nhắn. Vui lòng thử lại.");
-      return;
-    }
-
+  const handleForwardMessage = async (messageId, receiverIds) => {
     try {
-      receiverIds.forEach(receiverId => {
+      if (!messageId || !receiverIds || receiverIds.length === 0) {
+        toast.error("Vui lòng chọn tin nhắn và người nhận");
+        return;
+      }
+
+      const message = allMessage.find(msg => msg._id === messageId);
+      if (!message) {
+        toast.error("Không tìm thấy tin nhắn");
+        return;
+      }
+
+      // Emit socket event for each receiver
+      for (const receiverId of receiverIds) {
         socketConnection.emit("forward message", {
-          messageId,
+          messageId: messageId,
           sender: user._id,
           receiver: receiverId,
           currentChatUserId: params.userId
         });
-      });
+      }
+
       toast.success("Đã chuyển tiếp tin nhắn");
-      setShowMessageMenu(null);
-      setShowForwardModal(false);
-      setSelectedContacts(new Set());
+      setShowForwardModal(false); // Close the modal after successful forwarding
+      setSelectedContacts(new Set()); // Reset selected contacts
     } catch (error) {
       console.error("Error forwarding message:", error);
       toast.error("Có lỗi xảy ra khi chuyển tiếp tin nhắn");
     }
+  };
+
+  // Thêm hàm để lấy danh sách bạn bè
+  const [friendsList, setFriendsList] = useState([]);
+  const [isLoadingFriends, setIsLoadingFriends] = useState(false);
+  const [hasFetchedFriends, setHasFetchedFriends] = useState(false);
+
+  const fetchFriendsList = async () => {
+    if (hasFetchedFriends) return; // Prevent multiple fetches
+    
+    try {
+      setIsLoadingFriends(true);
+      const response = await axios.get(`${process.env.REACT_APP_BACKEND}/api/get-friends`);
+      if (response.data.success) {
+        // Lọc bỏ người dùng hiện tại và người đang chat
+        const filteredFriends = response.data.friends.filter(
+          friend => friend._id !== user._id && 
+          (!params.userId || friend._id !== params.userId) &&
+          (!params.groupId || !friend.groups?.includes(params.groupId))
+        );
+        setFriendsList(filteredFriends);
+        setHasFetchedFriends(true);
+      }
+    } catch (error) {
+      console.error("Error fetching friends list:", error);
+      // Không hiển thị toast error để tránh spam
+    } finally {
+      setIsLoadingFriends(false);
+    }
+  };
+
+  // Thêm useEffect để lấy danh sách bạn bè khi component mount
+  useEffect(() => {
+    fetchFriendsList();
+  }, [user._id, params.userId, params.groupId]);
+
+  // Thêm modal chuyển tiếp tin nhắn
+  const ForwardMessageModal = ({ messageId, onClose }) => {
+    const [selectedFriends, setSelectedFriends] = useState([]);
+
+    const handleFriendSelect = (friendId) => {
+      setSelectedFriends(prev => {
+        if (prev.includes(friendId)) {
+          return prev.filter(id => id !== friendId);
+        } else {
+          return [...prev, friendId];
+        }
+      });
+    };
+
+    const handleForward = () => {
+      if (selectedFriends.length === 0) {
+        toast.error("Vui lòng chọn ít nhất một người nhận");
+        return;
+      }
+      handleForwardMessage(messageId, selectedFriends);
+      onClose();
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-4 w-96">
+          <h2 className="text-xl font-semibold mb-4">Chuyển tiếp tin nhắn</h2>
+          
+          <div className="max-h-60 overflow-y-auto mb-4">
+            {isLoadingFriends ? (
+              <div className="text-center">Đang tải danh sách bạn bè...</div>
+            ) : friendsList.length === 0 ? (
+              <div className="text-center">Không có bạn bè nào để chuyển tiếp</div>
+            ) : (
+              friendsList.map(friend => (
+                <div
+                  key={friend._id}
+                  className={`flex items-center p-2 cursor-pointer hover:bg-gray-100 rounded ${
+                    selectedFriends.includes(friend._id) ? 'bg-blue-50' : ''
+                  }`}
+                  onClick={() => handleFriendSelect(friend._id)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedFriends.includes(friend._id)}
+                    onChange={() => handleFriendSelect(friend._id)}
+                    className="mr-2"
+                  />
+                  <Avatar src={friend.profile_pic} />
+                  <span className="ml-2">{friend.name}</span>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={handleForward}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Chuyển tiếp
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   // Thêm useEffect để xử lý reaction
@@ -996,12 +1111,15 @@ function MessagePage() {
     if (!socketConnection || !user?._id) return;
     
     console.log("Sending reaction:", { messageId, emoji, userId: user._id });
+    
+    // Gửi reaction cho cả chat đơn và chat nhóm
     socketConnection.emit("react_to_message", {
       messageId,
       emoji,
-      userId: user._id
+      userId: user._id,
+      isGroupChat: !!params.groupId
     });
-  }, [socketConnection, user?._id]);
+  }, [socketConnection, user?._id, params.groupId]);
 
   // Hàm hiển thị reaction cho tin nhắn
   const renderMessageReactions = (message) => {
@@ -1878,15 +1996,17 @@ function MessagePage() {
           message.msgByUserId?._id === user._id ? "justify-end" : "justify-start"
         } mb-4 relative group`}
       >
-        {/* For system messages about member changes, show centered text without any actions */}
         {isMemberChangeMessage ? (
           <div className="flex justify-center w-full">
             <div className="bg-gray-100 rounded-lg px-4 py-2 text-sm text-gray-600">
               {message.text}
             </div>
           </div>
+        ) : message.isRecalled ? (
+          <div className="italic text-gray-500 px-2">
+            {message.msgByUserId?._id === user._id ? "Bạn đã thu hồi một tin nhắn" : "Tin nhắn đã được thu hồi"}
+          </div>
         ) : (
-          // Regular message rendering
           <>
             {message.msgByUserId?._id !== user._id && (
               <div className="flex-shrink-0 mr-2">
@@ -1946,42 +2066,40 @@ function MessagePage() {
                 </div>
 
                 {/* Only show actions for non-system messages */}
-                <div className={`absolute ${
-                  message.msgByUserId?._id === user._id
-                    ? "left-0 -translate-x-full"
-                    : "right-0 translate-x-full"
-                } top-0 hidden group-hover:flex items-center space-x-2 px-2`}>
-                  <button
-                    onClick={() => handleReplyMessage(message)}
-                    className="text-gray-500 hover:text-blue-500"
-                  >
-                    <i className="fas fa-reply"></i>
-                  </button>
-                  {message.msgByUserId?._id === user._id && (
-                    <>
-                      <button
-                        onClick={() => handleRecallMessage(message._id)}
-                        className="text-gray-500 hover:text-red-500"
-                      >
-                        <i className="fas fa-undo"></i>
-                      </button>
-                      <button
-                        onClick={() => handleDeleteMessage(message._id, true)}
-                        className="text-gray-500 hover:text-red-500"
-                      >
-                        <i className="fas fa-trash"></i>
-                      </button>
-                    </>
-                  )}
-                  {message.msgByUserId?._id !== user._id && (
+                {!isMemberChangeMessage && !message.isRecalled && (
+                  <div className="absolute right-0 top-0 hidden group-hover:flex items-center space-x-2 px-2">
                     <button
-                      onClick={() => handleDeleteMessage(message._id, false)}
-                      className="text-gray-500 hover:text-red-500"
+                      onClick={() => handleReplyMessage(message)}
+                      className="text-gray-500 hover:text-blue-500"
                     >
-                      <i className="fas fa-times"></i>
+                      <i className="fas fa-reply"></i>
                     </button>
-                  )}
-                </div>
+                    {message.msgByUserId?._id === user._id && (
+                      <>
+                        <button
+                          onClick={() => handleRecallMessage(message._id)}
+                          className="text-gray-500 hover:text-red-500"
+                        >
+                          <i className="fas fa-undo"></i>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMessage(message._id, true)}
+                          className="text-gray-500 hover:text-red-500"
+                        >
+                          <i className="fas fa-trash"></i>
+                        </button>
+                      </>
+                    )}
+                    {message.msgByUserId?._id !== user._id && (
+                      <button
+                        onClick={() => handleDeleteMessage(message._id, false)}
+                        className="text-gray-500 hover:text-red-500"
+                      >
+                        <i className="fas fa-times"></i>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Message info (time, reactions, etc.) */}
@@ -2001,6 +2119,78 @@ function MessagePage() {
       </div>
     );
   };
+
+  useEffect(() => {
+    if (!socketConnection) {
+      console.log("Socket connection not available");
+      return;
+    }
+
+    console.log("Setting up socket listeners for friend requests");
+
+    // Friend request related socket listeners
+    const handleFriendRequestAccepted = (data) => {
+      console.log("Friend request accepted event received:", data);
+      if (data.friend._id === params.userId) {
+        console.log("Updating friend request status for accepted request");
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          isFriend: true,
+          hasPendingRequest: false,
+          requestId: null
+        }));
+        setDataUser(prev => ({
+          ...prev,
+          isFriend: true
+        }));
+        toast.success(`Đã trở thành bạn bè với ${data.friend.name}`);
+      }
+    };
+
+    const handleFriendRequestRejected = (data) => {
+      console.log("Friend request rejected event received:", data);
+      if (data.sender._id === params.userId) {
+        console.log("Updating friend request status for rejected request");
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          hasPendingRequest: false,
+          requestId: null
+        }));
+        toast.info(`${data.sender.name} đã từ chối lời mời kết bạn`);
+      }
+    };
+
+    const handleUnfriendSuccess = (data) => {
+      console.log("Unfriend success event received:", data);
+      if (data.targetUserId === params.userId) {
+        console.log("Updating friend request status for unfriend");
+        setFriendRequestStatus(prev => ({
+          ...prev,
+          isFriend: false,
+          hasPendingRequest: false,
+          requestId: null
+        }));
+        setDataUser(prev => ({
+          ...prev,
+          isFriend: false
+        }));
+        toast.success("Đã hủy kết bạn");
+      }
+    };
+
+    // Add socket listeners
+    socketConnection.on("friend-request-accepted", handleFriendRequestAccepted);
+    socketConnection.on("friend-request-rejected", handleFriendRequestRejected);
+    socketConnection.on("unfriend-success", handleUnfriendSuccess);
+
+    // Cleanup function
+    return () => {
+      console.log("Cleaning up socket listeners");
+      socketConnection.off("friend-request-accepted", handleFriendRequestAccepted);
+      socketConnection.off("friend-request-rejected", handleFriendRequestRejected);
+      socketConnection.off("unfriend-success", handleUnfriendSuccess);
+    };
+  }, [socketConnection, params.userId]);
 
   return (
     <div className="flex flex-col h-full">
@@ -2154,12 +2344,10 @@ function MessagePage() {
                   }
 
                   const isCurrentUser = msg.msgByUserId._id === user._id;
-                  console.log("Rendering message:", {
-                    id: msg._id,
-                    text: msg.text,
-                    sender: msg.msgByUserId.name,
-                    isCurrentUser
-                  }); // Debug log
+                  const isSystemMessage = msg.isSystemMessage && 
+                    (msg.text?.includes("đã rời khỏi nhóm") || 
+                     msg.text?.includes("đã thêm") || 
+                     msg.text?.includes("vào nhóm"));
 
                   return (
                     <div
@@ -2169,7 +2357,11 @@ function MessagePage() {
                         isCurrentUser ? "ml-auto bg-[#E5EFFF] text-[#1B1B1B]" : "bg-white"
                       } ${highlightedMessageId === msg._id ? 'bg-yellow-100' : ''}`}
                     >
-                      {msg.isRecalled ? (
+                      {isSystemMessage ? (
+                        <div className="italic text-gray-500 px-2 text-center w-full">
+                          {msg.text}
+                        </div>
+                      ) : msg.isRecalled ? (
                         <div className="italic text-gray-500 px-2">
                           {isCurrentUser ? "Bạn đã thu hồi một tin nhắn" : "Tin nhắn đã được thu hồi"}
                         </div>
