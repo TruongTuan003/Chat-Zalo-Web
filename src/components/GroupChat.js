@@ -75,6 +75,9 @@ export const GroupChat = ({ onClose }) => {
         // Nếu là nhóm mới, thêm vào danh sách
         return [...prevGroups, groupData];
       });
+
+      // Hiển thị thông báo cho người dùng
+      toast.success(`Bạn đã được thêm vào nhóm ${groupData.name}`);
     });
 
     socketConnection.on("group-created", (response) => {
@@ -111,6 +114,24 @@ export const GroupChat = ({ onClose }) => {
       }
     });
 
+    socketConnection.on("group-member-update", (data) => {
+      console.log("Group member update received:", data);
+      
+      // Cập nhật thông tin nhóm trong danh sách
+      setGroups(prevGroups => {
+        return prevGroups.map(group => {
+          if (group._id === data.groupId) {
+            return {
+              ...group,
+              members: data.members,
+              lastMessage: data.lastMessage
+            };
+          }
+          return group;
+        });
+      });
+    });
+
     socketConnection.on("error", (error) => {
       console.error("Socket error:", error);
       toast.error(error);
@@ -124,6 +145,7 @@ export const GroupChat = ({ onClose }) => {
       socketConnection.off("user-groups");
       socketConnection.off("new-group");
       socketConnection.off("group-created");
+      socketConnection.off("group-member-update");
       socketConnection.off("error");
     };
   }, [socketConnection, user]);

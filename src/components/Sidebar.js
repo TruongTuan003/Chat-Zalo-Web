@@ -117,37 +117,45 @@ export const Sidebar = () => {
         });
       });
 
-      // Thêm listener cho tin nhắn nhóm mới
-      socketConnection.on("group-message", (data) => {
-        console.log("Received group message:", data);
+      // Thêm listener cho sự kiện thành viên mới vào nhóm
+      socketConnection.on("group-member-update", (data) => {
+        console.log("Group member update received in sidebar:", data);
+        
+        // Cập nhật thông tin nhóm trong danh sách
         setAllUser(prev => {
-          const updatedList = prev.map(chat => {
+          return prev.map(chat => {
             if (chat.isGroup && chat._id === data.groupId) {
-              // Tăng số tin nhắn chưa đọc nếu không phải người gửi
-              const newUnseenMsg = data.msgByUserId._id !== user._id ? 
-                (chat.unseenMsg || 0) + 1 : 
-                chat.unseenMsg || 0;
-
               return {
                 ...chat,
-                lastMsg: {
-                  text: data.text,
-                  imageUrl: data.imageUrl,
-                  videoUrl: data.videoUrl,
-                  fileUrl: data.fileUrl,
-                  fileName: data.fileName,
-                  createdAt: data.createdAt
-                },
-                unseenMsg: newUnseenMsg,
-                lastMessageTime: data.createdAt
+                members: data.members,
+                lastMsg: data.lastMessage,
+                lastMessageTime: data.lastMessage?.createdAt || chat.lastMessageTime
               };
             }
             return chat;
           });
-
-          // Sắp xếp lại theo thời gian tin nhắn mới nhất
-          return updatedList.sort((a, b) => new Date(b?.lastMessageTime || 0) - new Date(a?.lastMessageTime || 0));
         });
+      });
+
+      // Thêm listener cho sự kiện tin nhắn hệ thống khi có thành viên mới
+      socketConnection.on("group-message", (data) => {
+        if (data.isSystemMessage && data.text.includes("đã thêm")) {
+          console.log("System message about new member:", data);
+          
+          // Cập nhật thông tin nhóm trong danh sách
+          setAllUser(prev => {
+            return prev.map(chat => {
+              if (chat.isGroup && chat._id === data.groupId) {
+                return {
+                  ...chat,
+                  lastMsg: data,
+                  lastMessageTime: data.createdAt
+                };
+              }
+              return chat;
+            });
+          });
+        }
       });
 
       // Thêm event handler cho seen-group-message
@@ -171,6 +179,8 @@ export const Sidebar = () => {
         socketConnection.off("conversation");
         socketConnection.off("user-groups");
         socketConnection.off("group-deleted");
+        socketConnection.off("group-member-update");
+        socketConnection.off("group-message");
       };
     }
   }, [socketConnection, user?._id, navigate]);

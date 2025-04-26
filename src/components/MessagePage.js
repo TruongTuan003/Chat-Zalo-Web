@@ -97,6 +97,11 @@ function MessagePage() {
   const scrollContainerRef = useRef(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
 
+  const [groupInfo, setGroupInfo] = useState(null);
+
+  // Thêm state để theo dõi pending reactions
+  const [pendingReactions, setPendingReactions] = useState({});
+
   const scrollToBottom = (behavior = 'auto') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
@@ -477,7 +482,7 @@ function MessagePage() {
               return;
             }
 
-            // Special handling for system messages (member leave/join)
+            // Special handling for system messages (member join/leave)
             if (data.isSystemMessage) {
               console.log("Processing system message:", data);
               
@@ -495,6 +500,11 @@ function MessagePage() {
                 setTimeout(() => {
                   socketConnection.emit("get-group-info", params.groupId);
                 }, 100);
+
+                // Scroll to bottom for new messages
+                setTimeout(() => {
+                  scrollToBottom('smooth');
+                }, 200);
               }
               return;
             }
@@ -1062,64 +1072,146 @@ function MessagePage() {
   useEffect(() => {
     if (!socketConnection) return;
 
-    const handleReactionUpdated = (data) => {
+    const handleReactionUpdate = (data) => {
       console.log("Received reaction update:", data);
-      
-      if (!data || !data.messageId || !data.reactions) {
-        console.error("Invalid reaction data received:", data);
-        return;
-      }
+      if (!data || !data.messageId) return;
 
-      setAllMessage(prevMessages => {
-        const updatedMessages = prevMessages.map(msg => {
+      setAllMessage(prevMessages => 
+        prevMessages.map(msg => {
           if (msg._id === data.messageId) {
-            console.log("Updating message reactions:", {
-              messageId: msg._id,
-              oldReactions: msg.reactions,
-              newReactions: data.reactions
-            });
             return {
               ...msg,
-              reactions: data.reactions
+              reactions: data.reactions || []
             };
           }
           return msg;
-        });
-
-        console.log("Messages after reaction update:", updatedMessages);
-        return updatedMessages;
-      });
+        })
+      );
     };
 
-    const handleGroupMessages = (messages) => {
-      console.log("Received group messages update:", messages);
-      if (Array.isArray(messages) && messages.length > 0) {
-        setAllMessage(messages);
-      }
-    };
-
-    socketConnection.on("reaction-updated", handleReactionUpdated);
-    socketConnection.on("group-messages", handleGroupMessages);
+    // Lắng nghe các sự kiện reaction cho cả chat đơn và nhóm
+    socketConnection.on("reaction-updated", handleReactionUpdate);
+    socketConnection.on("group-reaction-updated", handleReactionUpdate);
+    socketConnection.on("update-group-message", (data) => {
+      console.log("Received updated group message:", data);
+      setAllMessage(prevMessages => 
+        prevMessages.map(msg => {
+          if (msg._id === data._id) {
+            return data;
+          }
+          return msg;
+        })
+      );
+    });
 
     return () => {
-      socketConnection.off("reaction-updated", handleReactionUpdated);
-      socketConnection.off("group-messages", handleGroupMessages);
+      socketConnection.off("reaction-updated", handleReactionUpdate);
+      socketConnection.off("group-reaction-updated", handleReactionUpdate);
+      socketConnection.off("update-group-message");
     };
   }, [socketConnection]);
 
   const handleReaction = useCallback((messageId, emoji) => {
     if (!socketConnection || !user?._id) return;
     
-    console.log("Sending reaction:", { messageId, emoji, userId: user._id });
+    const isGroupChat = !!params.groupId;
     
-    // Gửi reaction cho cả chat đơn và chat nhóm
+    // Gửi reaction event
     socketConnection.emit("react_to_message", {
       messageId,
       emoji,
       userId: user._id,
-      isGroupChat: !!params.groupId
+      isGroupChat,
+      groupId: params.groupId,
+      conversationId: conversationId
     });
-  }, [socketConnection, user?._id, params.groupId]);
+
+    // Cập nhật UI ngay lập tức cho người thực hiện
+    setAllMessage(prevMessages => 
+      prevMessages.map(msg => {
+        if (msg._id === messageId) {
+          const existingReactionIndex = msg.reactions?.findIndex(
+            r => r.userId === user._id
+          );
+
+          let newReactions = [...(msg.reactions || [])];
+
+          if (existingReactionIndex !== -1) {
+            if (newReactions[existingReactionIndex].emoji === emoji) {
+              // Xóa reaction nếu emoji giống nhau
+              newReactions.splice(existingReactionIndex, 1);
+            } else {
+              // Cập nhật emoji mới
+              newReactions[existingReactionIndex].emoji = emoji;
+            }
+          } else {
+            // Thêm reaction mới
+            newReactions.push({
+              userId: user._id,
+              emoji: emoji
+            });
+          }
+
+          return {
+            ...msg,
+            reactions: newReactions
+          };
+        }
+        return msg;
+      })
+    );
+  }, [socketConnection, user?._id, params.groupId, conversationId]);
+
+  // Xử lý reaction update từ server
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    const handleReactionUpdate = (data) => {
+      if (!data || !data.messageId) return;
+
+      setAllMessage(prevMessages => 
+        prevMessages.map(msg => {
+          if (msg._id === data.messageId) {
+            return {
+              ...msg,
+              reactions: data.reactions || []
+            };
+          }
+          return msg;
+        })
+      );
+    };
+
+    // Lắng nghe các sự kiện reaction cho cả chat đơn và nhóm
+    socketConnection.on("reaction-updated", handleReactionUpdate);
+    socketConnection.on("group-reaction-updated", handleReactionUpdate);
+    socketConnection.on("update-group-message", (data) => {
+      console.log("Received updated group message:", data);
+      setAllMessage(prevMessages => 
+        prevMessages.map(msg => {
+          if (msg._id === data._id) {
+            return data;
+          }
+          return msg;
+        })
+      );
+    });
+
+    return () => {
+      socketConnection.off("reaction-updated", handleReactionUpdate);
+      socketConnection.off("group-reaction-updated", handleReactionUpdate);
+      socketConnection.off("update-group-message");
+    };
+  }, [socketConnection]);
+
+  // Thêm useEffect để theo dõi thay đổi tin nhắn
+  useEffect(() => {
+    console.log("[Messages] Messages updated:", {
+      count: allMessage.length,
+      hasGroupId: !!params.groupId,
+      groupId: params.groupId
+    });
+  }, [allMessage, params.groupId]);
 
   // Hàm hiển thị reaction cho tin nhắn
   const renderMessageReactions = (message) => {
@@ -1417,17 +1509,24 @@ function MessagePage() {
   }, []);
 
   const handleDeleteMessage = (messageId, isOwnMessage) => {
-    const confirmMessage = isOwnMessage 
-      ? "Bạn có chắc chắn muốn xóa tin nhắn này không?"
-      : "Bạn có chắc chắn muốn xóa tin nhắn này chỉ ở phía bạn không?";
+    const confirmMessage = "Bạn có chắc chắn muốn xóa tin nhắn này chỉ ở phía bạn không?";
     
     if (window.confirm(confirmMessage)) {
       if (socketConnection) {
         socketConnection.emit("delete-message", {
           messageId,
           userId: user._id,
-          conversationId: conversationId
+          conversationId: conversationId,
+          isGroup: !!params.groupId,
+          groupId: params.groupId,
+          deleteForEveryone: false // Luôn xóa chỉ ở phía người dùng
         });
+
+        // Xóa tin nhắn ngay lập tức ở phía người dùng
+        setAllMessage(prevMessages => 
+          prevMessages.filter(msg => msg._id !== messageId)
+        );
+        toast.success('Đã xóa tin nhắn');
       }
     }
   };
@@ -1438,7 +1537,9 @@ function MessagePage() {
         socketConnection.emit("recall-message", {
           messageId,
           userId: user._id,
-          conversationId: conversationId
+          conversationId: conversationId,
+          isGroup: !!params.groupId,
+          groupId: params.groupId
         });
       }
     }
@@ -1479,8 +1580,13 @@ function MessagePage() {
     socketConnection.emit("add-members-to-group", {
       groupId: dataUser._id,
       newMembers: selectedMembers.map(member => member._id),
-      addedBy: user._id
+      addedBy: user._id,
+      groupName: dataUser.name,
+      currentMembers: dataUser.members.map(member => member._id)
     });
+
+    // Đóng modal sau khi gửi yêu cầu
+    setShowMembersModal(false);
   };
 
   // Lắng nghe kết quả thêm thành viên
@@ -1774,116 +1880,232 @@ function MessagePage() {
 
   // Update the leave group handler
   const handleLeaveGroup = () => {
-    if (!socketConnection || !params.groupId || !user?._id) return;
-
-    socketConnection.emit("leave-group", {
-      groupId: params.groupId,
-      userId: user._id
-    });
-  };
-
-  // Add socket listeners for leave group events
-  useEffect(() => {
     if (!socketConnection) return;
-
-    // Handle successful leave group
-    socketConnection.on("leave-group-success", (data) => {
-      toast.success("Đã rời khỏi nhóm thành công");
-      navigate("/");
-    });
-
-    // Handle leave group error
-    socketConnection.on("leave-group-error", (data) => {
-      toast.error(data.message || "Có lỗi xảy ra khi rời nhóm");
-    });
-
-    // Handle when other member leaves
-    socketConnection.on("group-member-left", (data) => {
-      if (data.groupId === params.groupId) {
-        // Update messages list with system message
-        setAllMessage(prevMessages => {
-          if (!Array.isArray(prevMessages)) return [data.message];
-          if (prevMessages.some(msg => msg._id === data.message._id)) return prevMessages;
-          
-          const newMessages = [...prevMessages, data.message];
-          return newMessages.sort((a, b) => 
-            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
-          );
-        });
-
-        // Update group info
-        socketConnection.emit("get-group-info", params.groupId);
-      }
-    });
-
-    return () => {
-      socketConnection.off("leave-group-success");
-      socketConnection.off("leave-group-error");
-      socketConnection.off("group-member-left");
-    };
-  }, [socketConnection, params.groupId, navigate]);
-
-  const handleNewGroupMessage = (data) => {
-    try {
-      // Debug log
-      console.log("Group message received:", {
-        data,
-        currentGroupId: params.groupId,
-        isSystemMessage: data?.isSystemMessage
-      });
-
-      // Validate data
-      if (!data) {
-        console.warn("Received empty group message data");
-        return;
-      }
-
-      // For system messages, just update the messages list
-      if (data.isSystemMessage) {
-        console.log("Processing system message:", data);
-        
-        setAllMessage(prevMessages => {
-          if (!Array.isArray(prevMessages)) return [data];
-          if (prevMessages.some(msg => msg._id === data._id)) return prevMessages;
-          
-          const newMessages = [...prevMessages, data];
-          return newMessages.sort((a, b) => 
-            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
-          );
-        });
-        return;
-      }
-
-      // For regular messages
-      const messageGroupId = data.groupId ? String(data.groupId) : null;
-      const currentGroupId = params.groupId ? String(params.groupId) : null;
-
-      if (!messageGroupId || !currentGroupId) {
-        console.warn("Missing group ID:", { messageGroupId, currentGroupId });
-        return;
-      }
-
-      // Only process if message is for current group
-      if (messageGroupId === currentGroupId) {
-        setAllMessage(prevMessages => {
-          if (!Array.isArray(prevMessages)) return [data];
-          if (prevMessages.some(msg => msg._id === data._id)) return prevMessages;
-
-          const newMessages = [...prevMessages, data];
-          return newMessages.sort((a, b) => 
-            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
-          );
-        });
-
-        setTimeout(() => scrollToBottom('smooth'), 100);
-      }
-    } catch (error) {
-      console.error("Error handling group message:", error, {
-        messageData: data,
-        currentParams: params
+    
+    if (window.confirm("Bạn có chắc chắn muốn rời nhóm này không?")) {
+      socketConnection.emit("leave-group", {
+        groupId: params.groupId,
+        userId: user._id
       });
     }
   };
+
+  // Thêm useEffect để xử lý các sự kiện socket
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    // Xử lý sự kiện rời nhóm thành công
+    const handleLeaveGroupSuccess = (data) => {
+      // Hiển thị tin nhắn hệ thống
+      if (data.systemMessage) {
+        setAllMessage(prev => {
+          const isDuplicate = prev.some(msg => msg._id === data.systemMessage._id);
+          if (isDuplicate) return prev;
+          
+          const newMessages = [...prev, data.systemMessage];
+          return newMessages.sort((a, b) => 
+            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+          );
+        });
+      }
+
+      // Nếu là người rời nhóm, chuyển hướng về trang chủ
+      if (data.userId === user._id) {
+        // Đảm bảo chuyển hướng ngay lập tức
+        setTimeout(() => {
+          navigate("/");
+        }, 0);
+      }
+    };
+
+    // Xử lý sự kiện rời nhóm thất bại
+    const handleLeaveGroupError = (data) => {
+      alert(data.message);
+    };
+
+    // Xử lý sự kiện khi có thành viên rời nhóm
+    const handleGroupMessage = (data) => {
+      console.log("Received group message:", data);
+      
+      if (data.isSystemMessage && data.text.includes("đã rời khỏi nhóm")) {
+        console.log("Processing system message about member leaving");
+        
+        // Cập nhật tin nhắn
+        setAllMessage(prev => {
+          const isDuplicate = prev.some(msg => msg._id === data._id);
+          if (isDuplicate) return prev;
+          
+          const newMessages = [...prev, data];
+          return newMessages.sort((a, b) => 
+            new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+          );
+        });
+
+        // Cập nhật thông tin nhóm
+        socketConnection.emit("get-group-info", params.groupId);
+
+        // Cuộn xuống tin nhắn mới nhất
+        setTimeout(() => {
+          scrollToBottom('smooth');
+        }, 100);
+      }
+    };
+
+    // Xử lý cập nhật thông tin nhóm
+    const handleGroupInfo = (data) => {
+      console.log("Received group info update:", data);
+      if (data && data.members) {
+        setGroupInfo(data);
+      }
+    };
+
+    // Xử lý cập nhật danh sách nhóm
+    const handleUserGroups = (groups) => {
+      // Cập nhật danh sách nhóm trong sidebar
+      socketConnection.emit("get-user-groups");
+    };
+
+    // Thêm các event listener
+    socketConnection.on("leave-group-success", handleLeaveGroupSuccess);
+    socketConnection.on("leave-group-error", handleLeaveGroupError);
+    socketConnection.on("group-message", handleGroupMessage);
+    socketConnection.on("group-info", handleGroupInfo);
+    socketConnection.on("user-groups", handleUserGroups);
+
+    // Cleanup function
+    return () => {
+      socketConnection.off("leave-group-success", handleLeaveGroupSuccess);
+      socketConnection.off("leave-group-error", handleLeaveGroupError);
+      socketConnection.off("group-message", handleGroupMessage);
+      socketConnection.off("group-info", handleGroupInfo);
+      socketConnection.off("user-groups", handleUserGroups);
+    };
+  }, [socketConnection, params.groupId, user._id, navigate]);
+
+  // Thêm useEffect để xử lý cập nhật thông tin nhóm
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    const handleGroupInfo = (data) => {
+      if (data && data.members) {
+        setGroupInfo(data);
+      }
+    };
+
+    socketConnection.on("group-info", handleGroupInfo);
+
+    return () => {
+      socketConnection.off("group-info", handleGroupInfo);
+    };
+  }, [socketConnection]);
+
+  const handleNewGroupMessage = (data) => {
+    console.log("Received new group message:", data);
+    
+    if (!data || !data.groupId) {
+      console.error("Invalid message data received");
+      return;
+    }
+
+    // Kiểm tra nếu là tin nhắn hệ thống về việc thêm thành viên
+    if (data.isSystemMessage && data.text.includes("đã thêm")) {
+      console.log("Processing system message about new members");
+      
+      // Cập nhật thông tin nhóm
+      socketConnection.emit("get-group-info", data.groupId);
+      
+      // Cập nhật danh sách tin nhắn
+      setAllMessage(prev => {
+        // Kiểm tra xem tin nhắn đã tồn tại chưa
+        const isDuplicate = prev.some(msg => msg._id === data._id);
+        if (isDuplicate) return prev;
+        
+        // Thêm tin nhắn mới vào đầu danh sách
+        const newMessages = [data, ...prev];
+        
+        // Sắp xếp lại theo thời gian
+        return newMessages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      });
+
+      // Cuộn xuống tin nhắn mới nhất
+      setTimeout(() => {
+        scrollToBottom('smooth');
+      }, 100);
+    } else if (data.groupId === params.groupId) {
+      // Xử lý tin nhắn thông thường
+      setAllMessage(prev => {
+        const isDuplicate = prev.some(msg => msg._id === data._id);
+        if (isDuplicate) return prev;
+        
+        const newMessages = [data, ...prev];
+        return newMessages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      });
+
+      setTimeout(() => {
+        scrollToBottom('smooth');
+      }, 100);
+    }
+  };
+
+  // Thêm useEffect để xử lý cập nhật thông tin nhóm
+  useEffect(() => {
+    if (socketConnection) {
+      socketConnection.on("group-info", (data) => {
+        console.log("Received updated group info:", data);
+        if (data._id === currentMessage.current?.msgByUserId?._id) {
+          setDataUser(prev => ({
+            ...prev,
+            members: data.members
+          }));
+        }
+      });
+    }
+
+    return () => {
+      if (socketConnection) {
+        socketConnection.off("group-info");
+      }
+    };
+  }, [socketConnection, currentMessage.current?.msgByUserId?._id]);
+
+  // Add new useEffect for handling group member updates
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    const handleGroupMemberUpdate = (data) => {
+      console.log("Group member update received:", data);
+      
+      if (data.groupId === params.groupId) {
+        // Update group info
+        socketConnection.emit("get-group-info", params.groupId);
+        
+        // If it's a system message about new members
+        if (data.systemMessage) {
+          setAllMessage(prevMessages => {
+            const newMessages = Array.isArray(prevMessages) ? [...prevMessages] : [];
+            if (!newMessages.some(msg => msg._id === data.systemMessage._id)) {
+              newMessages.push(data.systemMessage);
+              newMessages.sort((a, b) => 
+                new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+              );
+            }
+            return newMessages;
+          });
+
+          // Scroll to bottom for new messages
+          setTimeout(() => {
+            scrollToBottom('smooth');
+          }, 200);
+        }
+      }
+    };
+
+    socketConnection.on("group-member-update", handleGroupMemberUpdate);
+
+    return () => {
+      socketConnection.off("group-member-update", handleGroupMemberUpdate);
+    };
+  }, [socketConnection, params.groupId, scrollToBottom]);
 
   // Set up message listener
   useEffect(() => {
@@ -1988,6 +2210,7 @@ function MessagePage() {
        message.text?.includes("đã thêm") || 
        message.text?.includes("vào nhóm"));
 
+    // Nếu là tin nhắn thường
     return (
       <div
         key={message._id}
@@ -1995,11 +2218,11 @@ function MessagePage() {
         className={`flex ${
           message.msgByUserId?._id === user._id ? "justify-end" : "justify-start"
         } mb-4 relative group`}
-      >
+        >
         {isMemberChangeMessage ? (
           <div className="flex justify-center w-full">
             <div className="bg-gray-100 rounded-lg px-4 py-2 text-sm text-gray-600">
-              {message.text}
+            {message.text}
             </div>
           </div>
         ) : message.isRecalled ? (
@@ -2110,14 +2333,14 @@ function MessagePage() {
                 {message.seen && message.msgByUserId?._id === user._id && (
                   <span className="ml-1 text-blue-500">
                     <i className="fas fa-check-double"></i>
-                  </span>
+          </span>
                 )}
               </div>
             </div>
           </>
         )}
-      </div>
-    );
+        </div>
+      );
   };
 
   useEffect(() => {
@@ -2191,6 +2414,75 @@ function MessagePage() {
       socketConnection.off("unfriend-success", handleUnfriendSuccess);
     };
   }, [socketConnection, params.userId]);
+
+  useEffect(() => {
+    if (socketConnection) {
+      // Thêm socket listener cho sự kiện thêm thành viên thành công
+      socketConnection.on("add-members-success", (data) => {
+        console.log("Add members success:", data);
+        
+        // Cập nhật tin nhắn hệ thống
+        if (data.systemMessage) {
+          setAllMessage(prev => {
+            const isDuplicate = prev.some(msg => msg._id === data.systemMessage._id);
+            if (isDuplicate) return prev;
+            
+            const newMessages = [data.systemMessage, ...prev];
+            return newMessages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+          });
+
+          // Cuộn xuống tin nhắn mới nhất
+          setTimeout(() => {
+            scrollToBottom('smooth');
+          }, 100);
+        }
+
+        // Cập nhật thông tin nhóm
+        if (data.groupId === params.groupId) {
+          socketConnection.emit("get-group-info", params.groupId);
+        }
+      });
+
+      // Thêm socket listener cho sự kiện cập nhật thông tin nhóm
+      socketConnection.on("group-info", (data) => {
+        console.log("Received updated group info:", data);
+        if (data._id === params.groupId) {
+          setDataUser(prev => ({
+            ...prev,
+            members: data.members
+          }));
+        }
+      });
+
+      // Thêm socket listener cho sự kiện tin nhắn nhóm
+      socketConnection.on("group-message", (data) => {
+        console.log("Received group message:", data);
+        
+        if (data.isSystemMessage && data.text.includes("đã thêm")) {
+          console.log("Processing system message about new members");
+          
+          setAllMessage(prev => {
+            const isDuplicate = prev.some(msg => msg._id === data._id);
+            if (isDuplicate) return prev;
+            
+            const newMessages = [data, ...prev];
+            return newMessages.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+          });
+
+          // Cuộn xuống tin nhắn mới nhất
+          setTimeout(() => {
+            scrollToBottom('smooth');
+          }, 100);
+        }
+      });
+
+      return () => {
+        socketConnection.off("add-members-success");
+        socketConnection.off("group-info");
+        socketConnection.off("group-message");
+      };
+    }
+  }, [socketConnection, params.groupId]);
 
   return (
     <div className="flex flex-col h-full">
