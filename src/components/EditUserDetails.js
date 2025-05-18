@@ -6,12 +6,16 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { useDispatch } from "react-redux";
 import { setUser } from "../redux/userSlice";
+import { FaPencilAlt, FaTimes, FaCamera } from "react-icons/fa";
 
 const EditUserDetails = ({ onClose, user }) => {
   const [data, setData] = useState({
     name: user?.name,
     profile_pic: user?.profile_pic,
+    phone: user?.phone,
   });
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [isEditingPhone, setIsEditingPhone] = useState(false);
   const uploadPhotoRef = useRef();
   const dispatch = useDispatch();
 
@@ -52,7 +56,8 @@ const EditUserDetails = ({ onClose, user }) => {
       const userData = {
         name: data.name,
         profile_pic: data.profile_pic,
-        _id: data._id
+        _id: data._id,
+        phone: data.phone,
       };
 
       const response = await axios({
@@ -82,74 +87,109 @@ const EditUserDetails = ({ onClose, user }) => {
 
   const handleUploadPhoto = async (e) => {
     const file = e.target.files[0];
-    const uploadPhoto = await uploadFile(file);
-    setData((preve) => {
-      return {
-        ...preve,
-        profile_pic: uploadPhoto?.url,
-      };
-    });
+    if (file) {
+      const uploadPhoto = await uploadFile(file);
+      setData((preve) => {
+        return {
+          ...preve,
+          profile_pic: uploadPhoto?.url,
+        };
+      });
+    }
   };
 
   return (
-    <div className="fixed top-0 bottom-0 left-0 right-0 bg-gray-700 bg-opacity-40 flex justify-center items-center">
-      <div className="bg-white p-4 rounded w-full max-w-sm">
-        <h2 className="font-semibold">Profile</h2>
-        <p className="text-sm">Edit user detail</p>
-        <form className="grid gap-3 mt-3" onSubmit={handleSubmit}>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="name">
-              Name:
-              <input
-                type="text"
-                name="name"
-                id="name"
-                value={data.name}
-                onChange={handleOnChange}
-                className="w-full py-1 px-2 focus:outline-primary border-0.5"
-              />
-            </label>
-          </div>
-          <div>
-            <div>Photo:</div>
-            <div className="my-1 flex items-center gap-4">
+    <div className="fixed top-0 bottom-0 left-0 right-0 bg-gray-700 bg-opacity-40 flex justify-center items-center z-50">
+      <div className="bg-white rounded-lg overflow-hidden shadow-xl w-full max-w-md">
+        <div className="flex justify-between items-center p-4 border-b border-slate-200">
+          <h2 className="text-lg font-semibold">Thông tin tài khoản</h2>
+          <FaTimes size={18} className="text-slate-500 cursor-pointer" onClick={onClose} />
+        </div>
+
+        <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+          <div className="flex items-center p-4 gap-4 pt-4">
+            <div className="relative">
               <Avatar
-                width={40}
-                height={40}
                 imageUrl={data?.profile_pic}
+                width={80}
+                height={80}
                 name={data?.name}
               />
-              <button
-                type="button"
+              <div 
+                className="absolute bottom-0 right-0 bg-white rounded-full p-1 shadow cursor-pointer"
                 onClick={handleOpenUploadPhoto}
-                className="font-semibold"
               >
-                Change Photo
-              </button>
-              <input
+                <FaCamera size={12} className="text-slate-600" />
+              </div>
+              <input 
                 type="file"
                 className="hidden"
                 ref={uploadPhotoRef}
                 onChange={handleUploadPhoto}
+                accept="image/*"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              {isEditingName ? (
+                <input
+                  type="text"
+                  value={data.name}
+                  onChange={handleOnChange}
+                  name="name"
+                  className="text-xl font-semibold text-slate-800 border-b border-blue-600 focus:outline-none"
+                  onBlur={() => setIsEditingName(false)}
+                  autoFocus
+                />
+              ) : (
+                <h3 className="text-xl font-semibold text-slate-800">{data?.name || 'User'}</h3>
+              )}
+              <FaPencilAlt 
+                size={14} 
+                className="text-slate-500 cursor-pointer"
+                onClick={() => setIsEditingName(true)}
               />
             </div>
           </div>
+
+          <div className="p-4">
+            <h4 className="text-lg font-semibold mb-3">Thông tin cá nhân</h4>
+            <div className="grid grid-cols-2 gap-2 text-slate-600 text-sm">
+              <div>Điện thoại</div>
+              <div className="flex items-center gap-2">
+                {isEditingPhone ? (
+                  <input
+                    type="text"
+                    value={data.phone}
+                    onChange={handleOnChange}
+                    name="phone"
+                    className="text-sm text-slate-600 border-b border-blue-600 focus:outline-none w-full"
+                    onBlur={() => setIsEditingPhone(false)}
+                    autoFocus
+                  />
+                ) : (
+                  <span>{data?.phone}</span>
+                )}
+              </div>
+            </div>
+          </div>
+
           <Diveder />
-          <div className="flex gap-2 w-fit ml-auto">
+
+          <div className="p-4 text-sm text-slate-500">
+            Chỉ bạn bè có lưu số của bạn trong danh bạ máy xem được số này
+          </div>
+
+          <Diveder />
+
+          <div className="flex justify-center p-4">
             <button
-              onClick={onClose}
-              className="border-primary text-primary border px-4 py-1 rounded hover:bg-primary hover:text-white"
+              onClick={handleSubmit}
+              className="bg-primary text-white px-6 py-2 rounded-md hover:bg-secondary"
             >
-              Cancel
-            </button>
-            <button
-              onSubmit={handleSubmit}
-              className="border-primary text-white bg-primary border px-4 py-1 rounded hover:bg-secondary"
-            >
-              Save
+              <FaPencilAlt size={14} className="inline mr-2" />Cập nhật
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

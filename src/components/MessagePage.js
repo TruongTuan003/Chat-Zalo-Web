@@ -2485,7 +2485,7 @@ function MessagePage() {
   }, [socketConnection, params.groupId]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full w-full min-w-0 flex-1">
       <ToastContainer />
       <header className="sticky top-0 h-16 bg-white flex justify-between items-center px-4 z-50">
         <div className="flex items-center gap-4">
