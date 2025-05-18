@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { IoChatbubbleEllipsesSharp } from "react-icons/io5";
 import { FaUserFriends, FaUsers, FaCloud, FaCog } from "react-icons/fa";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -29,7 +29,7 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
   const [searchValue, setSearchValue] = useState("");
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
-  const [sidebarView, setSidebarView] = useState('chat'); // 'chat' or 'friends'
+  const [sidebarView, setSidebarView] = useState('chat'); // 'chat' or 'contacts'
 
   // Calculate number of unread conversations
   const unreadConversationCount = allUser.filter(chat => 
@@ -43,13 +43,30 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
 
   // Filtered list based on sidebar view
   const filteredUsers = allUser.filter(chat => {
+    if (!chat.userDetails) return null;
+
+    // Search filtering (client-side)
+    const chatName = chat.userDetails.name;
+    const normalizedChatName = removeAccents(chatName?.toLowerCase() || '');
+    const normalizedSearchValue = removeAccents(searchValue.toLowerCase());
+
+    if (searchValue && !normalizedChatName.includes(normalizedSearchValue)) {
+      return null;
+    }
+
     if (sidebarView === 'chat') {
       return true; // Show all in chat view
-    } else if (sidebarView === 'friends') {
-      return !chat.isGroup; // Only show private chats in friends view
+    } else if (sidebarView === 'contacts') {
+      // In contacts view, only show users who are not in a group chat
+      return !chat.isGroup;
     }
-    return false; // Should not happen
+    return false;
   });
+
+  // Memoize the onClose function for SearchUser modal
+  const handleCloseSearchUser = useCallback(() => {
+    setOpenSearchUser(false);
+  }, [setOpenSearchUser]);
 
   useEffect(() => {
     if (socketConnection) {
@@ -239,7 +256,7 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
         <div className="flex flex-col gap-3 items-center mt-4 h-full">
           <NavLink
             className={({ isActive }) =>
-              `w-12 h-12 flex items-center justify-center rounded-xl hover:bg-blue-700 transition-colors relative ${isActive ? "bg-blue-700" : ""}`
+              `w-12 h-12 flex items-center justify-center rounded-xl hover:bg-blue-700 transition-colors relative ${sidebarView === 'chat' ? "bg-blue-700" : ""}`
             }
             title="chat"
             to="/"
@@ -252,6 +269,17 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
                 {unreadConversationCount}
               </span>
             )}
+          </NavLink>
+          {/* Contacts Icon */}
+          <NavLink
+            className={({ isActive }) =>
+              `w-12 h-12 flex items-center justify-center rounded-xl hover:bg-blue-700 transition-colors ${sidebarView === 'contacts' ? "bg-blue-700" : ""}`
+            }
+            title="contacts"
+            to="/"
+            onClick={() => setSidebarView('contacts')}
+          >
+            <FaUserFriends size={26} color="white" />
           </NavLink>
           {/* Icons group 1 */}
           <div className="flex flex-col gap-3 items-center">
@@ -377,8 +405,7 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
       </div>
       {/* Sidebar chính */}
       <div className="w-[310px]">
-        {/* Always show Chat List View */}
-        {/* === Chat List View === */}          
+        {/* Header with search and buttons */}
         <div className="h-16 flex items-center px-4 gap-2">
           {/* Search bar */}
           <div className="flex-1 flex items-center bg-[#f1f3f6] rounded-xl px-2 py-1 max-w-[180px]">
@@ -416,24 +443,23 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
           {filteredUsers.length === 0 && (
             <div className="mt-12">
               <div className="flex justify-center items-center my-4 text-slate-500">
-                <FiArrowUpLeft size={50} />
+                {sidebarView === 'chat' ? (
+                  <FiArrowUpLeft size={50} />
+                ) : (
+                  <FaUserFriends size={50} />
+                )}
               </div>
               <p className="text-lg text-center text-slate-400">
-                Explore user to start a conversation with.
+                {searchValue 
+                  ? "Không tìm thấy kết quả phù hợp"
+                  : sidebarView === 'chat' 
+                    ? "Explore user to start a conversation with."
+                    : "No contacts found. Add some friends to start chatting!"}
               </p>
             </div>
           )}
           {filteredUsers.map((chat) => {
-            if (!chat.userDetails) return null; // Basic check for incomplete data
-
-            // Search filtering (client-side)
-            const chatName = chat.userDetails.name;
-            const normalizedChatName = removeAccents(chatName?.toLowerCase() || '');
-            const normalizedSearchValue = removeAccents(searchValue.toLowerCase());
-
-            if (searchValue && !normalizedChatName.includes(normalizedSearchValue)) {
-              return null; // Hide if search value is present and doesn't match
-            }
+            if (!chat.userDetails) return null;
 
             return (
               <NavLink
@@ -445,6 +471,12 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
                 key={chat._id || chat.userDetails._id}
                 className="flex items-center gap-2 py-3 px-2 border border-transparent hover:border-slate-300 rounded hover:bg-slate-100 w-full max-w-full"
                 style={{width: '100%', maxWidth: '100%'}}
+                onClick={() => {
+                  // Switch to chat view when clicking on a contact
+                  if (sidebarView === 'contacts') {
+                    setSidebarView('chat');
+                  }
+                }}
               >
                 <div>
                   {chat.isGroup ? (
@@ -467,32 +499,34 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
                       {chat.userDetails.name || 'Unknown'}
                     </h3>
                   </div>
-                  <div className="text-slate-500 text-xs flex items-center gap-2">
-                    <div className="flex items-center gap-2">
-                      {chat.lastMsg?.imageUrl && (
-                        <div className="flex items-center gap-2">
-                          <span>
-                            <FaImage />
-                          </span>
-                          {!chat.lastMsg?.text && <span>Image</span>}
-                        </div>
-                      )}
+                  {sidebarView === 'chat' && (
+                    <div className="text-slate-500 text-xs flex items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        {chat.lastMsg?.imageUrl && (
+                          <div className="flex items-center gap-2">
+                            <span>
+                              <FaImage />
+                            </span>
+                            {!chat.lastMsg?.text && <span>Image</span>}
+                          </div>
+                        )}
 
-                      {chat.lastMsg?.videoUrl && (
-                        <div className="flex items-center gap-2">
-                          <span>
-                            <FaVideo />
-                          </span>
-                          {!chat.lastMsg?.text && <span>Video</span>}
-                        </div>
-                      )}
+                        {chat.lastMsg?.videoUrl && (
+                          <div className="flex items-center gap-2">
+                            <span>
+                              <FaVideo />
+                            </span>
+                            {!chat.lastMsg?.text && <span>Video</span>}
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-ellipsis line-clamp-1">
+                        {chat.lastMsg?.text}
+                      </p>
                     </div>
-                    <p className="text-ellipsis line-clamp-1">
-                      {chat.lastMsg?.text}
-                    </p>
-                  </div>
+                  )}
                 </div>
-                {Boolean(chat.unseenMsg) && (
+                {sidebarView === 'chat' && Boolean(chat.unseenMsg) && (
                   <p className="text-xs w-6 h-6 flex justify-center items-center ml-auto p-1 bg-slate-400 text-white font-semibold rounded-full">
                     {chat.unseenMsg}
                   </p>
@@ -505,7 +539,7 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
 
       {/** edit user details */}
       {openSearchUser && (
-        <SearchUser onClose={() => setOpenSearchUser(false)} />
+        <SearchUser onClose={handleCloseSearchUser} navigate={navigate} />
       )}
       {/**group chat */}
       {openGroupChat && (

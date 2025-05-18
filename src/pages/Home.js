@@ -24,7 +24,6 @@ function Home() {
     name: user.name,
     email: user.email,
     profile_pic: user.profile_pic,
-    phone: user.phone,
     token: user.token,
     onlineUser: user.onlineUser,
   });
@@ -113,7 +112,7 @@ function Home() {
               <div className="flex flex-row items-center justify-center w-full">
                 <button
                   onClick={goPrev}
-                  className="text-3xl px-6 py-2 text-gray-400 hover:text-blue-500 focus:outline-none"
+                  className="text-3xl px-6 py-2 text-blue-700 hover:text-blue-700 focus:outline-none"
                   aria-label="Previous slide"
                   style={{ fontWeight: 300 }}
                 >
@@ -150,7 +149,7 @@ function Home() {
                 </div>
                 <button
                   onClick={goNext}
-                  className="text-3xl px-6 py-2 text-gray-400 hover:text-blue-500 focus:outline-none"
+                  className="text-3xl px-6 py-2 text-blue-700 hover:text-blue-700 focus:outline-none"
                   aria-label="Next slide"
                   style={{ fontWeight: 300 }}
                 >
