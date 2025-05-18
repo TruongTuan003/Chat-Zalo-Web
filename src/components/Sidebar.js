@@ -387,7 +387,6 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
               value={searchValue}
               onChange={e => {
                 setSearchValue(e.target.value);
-                setOpenSearchUser(true); // Mở modal tìm kiếm khi nhập
               }}
               style={{ maxWidth: 80 }}
             />
