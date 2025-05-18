@@ -97,16 +97,23 @@ const EditUserDetails = ({ onClose, user }) => {
       });
     }
   };
-
+  console.log("data", data.phone);
   return (
     <div className="fixed top-0 bottom-0 left-0 right-0 bg-gray-700 bg-opacity-40 flex justify-center items-center z-50">
       <div className="bg-white rounded-lg overflow-hidden shadow-xl w-full max-w-md">
         <div className="flex justify-between items-center p-4 border-b border-slate-200">
           <h2 className="text-lg font-semibold">Thông tin tài khoản</h2>
-          <FaTimes size={18} className="text-slate-500 cursor-pointer" onClick={onClose} />
+          <FaTimes
+            size={18}
+            className="text-slate-500 cursor-pointer"
+            onClick={onClose}
+          />
         </div>
 
-        <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+        <div
+          className="overflow-y-auto"
+          style={{ maxHeight: "calc(100vh - 120px)" }}
+        >
           <div className="flex items-center p-4 gap-4 pt-4">
             <div className="relative">
               <Avatar
@@ -115,13 +122,13 @@ const EditUserDetails = ({ onClose, user }) => {
                 height={80}
                 name={data?.name}
               />
-              <div 
+              <div
                 className="absolute bottom-0 right-0 bg-white rounded-full p-1 shadow cursor-pointer"
                 onClick={handleOpenUploadPhoto}
               >
                 <FaCamera size={12} className="text-slate-600" />
               </div>
-              <input 
+              <input
                 type="file"
                 className="hidden"
                 ref={uploadPhotoRef}
@@ -141,10 +148,12 @@ const EditUserDetails = ({ onClose, user }) => {
                   autoFocus
                 />
               ) : (
-                <h3 className="text-xl font-semibold text-slate-800">{data?.name || 'User'}</h3>
+                <h3 className="text-xl font-semibold text-slate-800">
+                  {data?.name || "User"}
+                </h3>
               )}
-              <FaPencilAlt 
-                size={14} 
+              <FaPencilAlt
+                size={14}
                 className="text-slate-500 cursor-pointer"
                 onClick={() => setIsEditingName(true)}
               />
@@ -167,7 +176,7 @@ const EditUserDetails = ({ onClose, user }) => {
                     autoFocus
                   />
                 ) : (
-                  <span>{data?.phone}</span>
+                  <span>{data?.phone || "Chưa có"}</span>
                 )}
               </div>
             </div>
@@ -186,7 +195,8 @@ const EditUserDetails = ({ onClose, user }) => {
               onClick={handleSubmit}
               className="bg-primary text-white px-6 py-2 rounded-md hover:bg-secondary"
             >
-              <FaPencilAlt size={14} className="inline mr-2" />Cập nhật
+              <FaPencilAlt size={14} className="inline mr-2" />
+              Cập nhật
             </button>
           </div>
         </div>
