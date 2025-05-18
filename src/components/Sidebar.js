@@ -288,7 +288,10 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
         {showSettingsMenu && (
           <div className="absolute bottom-20 left-[80px] bg-white p-2 rounded-md shadow-lg text-slate-800 z-10 w-60">
             {/* Thông tin tài khoản */}
-            <div className="flex items-center gap-2 py-2 px-3 cursor-pointer hover:bg-slate-100 rounded-md">
+            <div 
+              className="flex items-center gap-2 py-2 px-3 cursor-pointer hover:bg-slate-100 rounded-md"
+              onClick={() => { setEditUserOpen(true); setShowSettingsMenu(false); }}
+            >
               <FaUser size={18} />
               <span>Thông tin tài khoản</span>
             </div>
