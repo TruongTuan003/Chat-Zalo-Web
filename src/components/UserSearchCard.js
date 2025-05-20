@@ -57,6 +57,8 @@ export const UserSearchCard = ({ user, onClose }) => {
         </div>
       </Link>
       <div>
+        {/* Removed Add Friend button as per user request */}
+        {/*
         {isFriend ? (
           <span className="text-green-500 text-sm">Bạn bè</span>
         ) : (
@@ -67,6 +69,10 @@ export const UserSearchCard = ({ user, onClose }) => {
           >
             {isLoading ? "Đang xử lý..." : "Kết bạn"}
           </button>
+        )}
+        */}
+         {isFriend && (
+          <span className="text-green-500 text-sm">Bạn bè</span>
         )}
       </div>
     </div>

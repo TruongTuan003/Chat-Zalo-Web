@@ -2,8 +2,9 @@ import React from 'react';
 import { IoClose } from "react-icons/io5";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
+import Avatar from './Avatar';
 
-export const UserProfileCard = ({ user, onClose }) => {
+export const UserProfileCard = ({ user, onClose, onChatClick }) => {
   const currentUser = useSelector((state) => state?.user);
   const navigate = useNavigate();
 
@@ -65,8 +66,8 @@ export const UserProfileCard = ({ user, onClose }) => {
         {/* Nút hành động */}
         <div className="flex justify-center gap-4 mt-6">
           <button
-            onClick={handleStartChat}
-            className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            onClick={() => onChatClick && onChatClick(user)}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors mr-2"
           >
             Nhắn tin
           </button>

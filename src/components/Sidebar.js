@@ -30,6 +30,7 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [sidebarView, setSidebarView] = useState('chat'); // 'chat' or 'contacts'
+  const [friendsList, setFriendsList] = useState([]); // State to store friends list
 
   // Calculate number of unread conversations
   const unreadConversationCount = allUser.filter(chat => 
@@ -57,8 +58,8 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
     if (sidebarView === 'chat') {
       return true; // Show all in chat view
     } else if (sidebarView === 'contacts') {
-      // In contacts view, only show users who are not in a group chat
-      return !chat.isGroup;
+      // In contacts view, only show users who are friends and not in a group chat
+      return !chat.isGroup && chat.userDetails?.isFriend;
     }
     return false;
   });
@@ -72,6 +73,7 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
     if (socketConnection) {
       socketConnection.emit("sidebar", user?._id);
       socketConnection.emit("get-user-groups");
+      socketConnection.emit("get-friends"); // Emit to get friends list
 
       socketConnection.on("conversation", (data) => {
         setConversation(data);
@@ -100,28 +102,24 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
         const conversationUserData = data.map((conversationUser) => {
           if (!conversationUser) return null;
 
-          if (conversationUser?.sender?._id === conversationUser?.receiver?._id) {
-            return {
-              ...conversationUser,
-              userDetails: conversationUser?.sender || {},
-              isGroup: false,
-              lastMessageTime: conversationUser?.lastMsg?.createdAt || new Date(0)
-            };
-          } else if (conversationUser?.receiver?._id !== user?._id) {
-            return {
-              ...conversationUser,
-              userDetails: conversationUser?.receiver || {},
-              isGroup: false,
-              lastMessageTime: conversationUser?.lastMsg?.createdAt || new Date(0)
-            };
-          } else {
-            return {
-              ...conversationUser,
-              userDetails: conversationUser?.sender || {},
-              isGroup: false,
-              lastMessageTime: conversationUser?.lastMsg?.createdAt || new Date(0)
-            };
-          }
+          const chatPartnerDetails = 
+            conversationUser?.sender?._id === conversationUser?.receiver?._id
+              ? conversationUser?.sender
+              : conversationUser?.receiver?._id !== user?._id
+              ? conversationUser?.receiver
+              : conversationUser?.sender;
+
+          const isFriend = friendsList.includes(chatPartnerDetails?._id); // Check if the partner is in the friends list
+
+          return {
+            ...conversationUser,
+            userDetails: {
+              ...chatPartnerDetails,
+              isFriend: isFriend // Add isFriend property
+            },
+            isGroup: false,
+            lastMessageTime: conversationUser?.lastMsg?.createdAt || new Date(0)
+          };
         }).filter(Boolean);
 
         setAllUser(prev => {
@@ -199,6 +197,12 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
         }
       });
 
+      // Thêm listener cho sự kiện danh sách bạn bè
+      socketConnection.on("friends", (data) => { // Listener for friends list
+        console.log("Received friends list:", data);
+        setFriendsList(data.map(friend => friend._id)); // Store only friend IDs
+      });
+
       // Thêm event handler cho seen-group-message
       const handleGroupMessageSeen = () => {
         const currentGroupId = window.location.pathname.split('/group/')[1];
@@ -222,9 +226,171 @@ export const Sidebar = React.memo(({ setEditUserOpen }) => {
         socketConnection.off("group-deleted");
         socketConnection.off("group-member-update");
         socketConnection.off("group-message");
+        socketConnection.off("friends"); // Clean up friends listener
+        socketConnection.off("friend-request-accepted"); // Clean up listener
       };
     }
   }, [socketConnection, user?._id, navigate]);
+
+  useEffect(() => {
+    if (!socketConnection || !user?._id) return;
+
+    // Khi hủy kết bạn thành công
+    socketConnection.on("unfriend-success", () => {
+      socketConnection.emit("get-friends");
+    });
+
+    // Khi nhận được xác nhận kết bạn
+    socketConnection.on("friend-request-accepted", () => {
+      socketConnection.emit("get-friends");
+    });
+
+    // Khi nhận được danh sách bạn bè mới
+    socketConnection.on("friends-list", (friends) => {
+      setFriendsList(friends);
+    });
+
+    // Dọn dẹp listener khi component unmount
+    return () => {
+      socketConnection.off("unfriend-success");
+      socketConnection.off("friend-request-accepted");
+      socketConnection.off("friends-list");
+    };
+  }, [socketConnection, user?._id]);
+
+  // Add effect to combine conversation and groups when they change, and re-process when friends list changes
+  useEffect(() => {
+    console.log("Combining conversations and groups...");
+    console.log("Current conversation state:", conversation);
+    console.log("Current groups state:", groups);
+    console.log("Current friendsList state:", friendsList);
+
+    const conversationUserData = conversation.map((conversationUser) => {
+      if (!conversationUser) return null;
+
+      const chatPartnerDetails =
+        conversationUser?.sender?._id === user?._id
+          ? conversationUser?.receiver
+          : conversationUser?.sender;
+
+      // Ensure chatPartnerDetails and its _id exist before checking friendsList
+      const isFriend = chatPartnerDetails?._id && friendsList.includes(chatPartnerDetails._id);
+
+      return {
+        ...conversationUser,
+        userDetails: {
+          ...chatPartnerDetails,
+          isFriend: isFriend
+        },
+        isGroup: false,
+        lastMessageTime: conversationUser?.lastMsg?.createdAt || new Date(0)
+      };
+    }).filter(Boolean);
+
+    const groupData = groups.filter(group => group.lastMessage).map(group => ({
+      _id: group._id,
+      userDetails: {
+        _id: group._id,
+        name: group.name,
+        profile_pic: group.avatar || "",
+      },
+      lastMsg: group.lastMessage,
+      unseenMsg: group.unseenMessages?.find(
+        um => um.userId.toString() === user._id.toString()
+      )?.count || 0,
+      isGroup: true,
+      members: group.members,
+      lastMessageTime: group.lastMessage?.createdAt || group.createdAt || new Date(0)
+    }));
+
+    const combined = [...groupData, ...conversationUserData];
+    setAllUser(combined.sort((a, b) => new Date(b?.lastMessageTime || 0) - new Date(a?.lastMessageTime || 0)));
+
+  }, [conversation, groups, friendsList, user?._id]); // Depend on conversation, groups, and friendsList
+
+  // Add socket listener for friend request accepted
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    const handleFriendRequestAccepted = (data) => {
+      console.log("Friend request accepted in sidebar:", data);
+      const acceptedFriend = data.friend; // Get the full friend object
+
+      if (acceptedFriend?._id) {
+        // Update the conversation state for this specific user
+        setConversation(prevConversations => {
+          return prevConversations.map(conv => {
+            const chatPartnerId = 
+              conv.sender?._id === user?._id ? conv.receiver?._id : conv.sender?._id;
+
+            if (!conv.isGroup && chatPartnerId === acceptedFriend._id) {
+              // Found the conversation with the newly accepted friend
+              return {
+                ...conv,
+                userDetails: {
+                  ...conv.userDetails,
+                  isFriend: true // Update isFriend status
+                }
+              };
+            }
+            return conv;
+          });
+        });
+
+        // Also refresh the overall friends list to be accurate
+        socketConnection.emit("get-friends");
+      }
+    };
+
+    socketConnection.on("friend-request-accepted", handleFriendRequestAccepted);
+
+    return () => {
+      socketConnection.off("friend-request-accepted", handleFriendRequestAccepted);
+    };
+
+  }, [socketConnection, user?._id]); // Depend on socketConnection and user._id
+
+  // Add socket listener for unfriend success and received
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    const handleUnfriend = (data) => {
+      console.log("Unfriend event received in sidebar:", data);
+      const unfriendedUserId = data.targetUserId;
+
+      if (unfriendedUserId) {
+        setConversation(prevConversations => {
+          return prevConversations.map(conv => {
+            const chatPartnerId = 
+              conv.sender?._id === user?._id ? conv.receiver?._id : conv.sender?._id;
+
+            if (!conv.isGroup && chatPartnerId === unfriendedUserId) {
+              return {
+                ...conv,
+                userDetails: {
+                  ...conv.userDetails,
+                  isFriend: false
+                }
+              };
+            }
+            return conv;
+          });
+        });
+
+        // Refresh the overall friends list
+        socketConnection.emit("get-friends");
+      }
+    };
+
+    socketConnection.on("unfriend-success", handleUnfriend);
+    socketConnection.on("unfriend-received", handleUnfriend);
+
+    return () => {
+      socketConnection.off("unfriend-success", handleUnfriend);
+      socketConnection.off("unfriend-received", handleUnfriend);
+    };
+
+  }, [socketConnection, user?._id]); // Depend on socketConnection and user._id
 
   const dispatch = useDispatch();
 

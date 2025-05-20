@@ -176,7 +176,14 @@ export const SearchUser = ({ onClose, navigate }) => {
             {!loading && searchAttempted && searchUserResult && (
                <div className="mb-4">
                 <h3 className="text-lg font-semibold text-slate-800 mb-2">Kết quả tìm kiếm</h3>
-                 <UserProfileCard user={searchUserResult} onClose={handleUserProfileCardClose} />
+                 <UserProfileCard
+                   user={searchUserResult}
+                   onClose={handleUserProfileCardClose}
+                   onChatClick={(userToChat) => {
+                     navigate(`/${userToChat._id}`);
+                     onClose(); // Close the search modal after navigating
+                   }}
+                 />
                </div>
             )}
 

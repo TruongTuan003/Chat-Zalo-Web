@@ -21,6 +21,71 @@ import axios from "axios";
 import { MdPersonRemove, MdDelete } from "react-icons/md";
 import GroupAvatar from "./GroupAvatar";
 
+// Thêm component Modal chuyển quyền trưởng nhóm
+const TransferOwnershipModal = ({ group, members, onClose, onTransfer }) => {
+  const [selectedMember, setSelectedMember] = useState(null);
+
+  // Lọc ra người tạo nhóm hiện tại khỏi danh sách thành viên khả dụng
+  const membersForTransfer = members.filter(member => member._id !== group.creator._id);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+      <div className="bg-white rounded-lg p-6 w-96 max-h-[80vh] flex flex-col">
+        <div className="flex justify-between items-center mb-4 sticky top-0 bg-white pb-2 border-b">
+          <h2 className="text-xl font-semibold">Chuyển quyền trưởng nhóm</h2>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+            title="Đóng"
+          >
+            <span className="text-xl font-medium text-gray-500">&times;</span>
+          </button>
+        </div>
+
+        <div className="mb-6 flex-1 overflow-y-auto">
+          <h3 className="font-medium mb-2">Chọn thành viên nhận quyền:</h3>
+          <div className="space-y-2">
+            {membersForTransfer.length === 0 ? (
+               <div className="text-center text-gray-500">Không có thành viên nào khác trong nhóm.</div>
+            ) : (
+              membersForTransfer.map(member => (
+                <div
+                  key={member._id}
+                  className={`flex items-center gap-2 p-2 hover:bg-gray-100 rounded-lg cursor-pointer ${selectedMember?._id === member._id ? 'bg-blue-50' : ''}`}
+                  onClick={() => setSelectedMember(member)}
+                >
+                  <img
+                    src={member.profile_pic || "https://via.placeholder.com/40"} // Fallback avatar
+                    alt={member.name}
+                    className="w-10 h-10 rounded-full"
+                  />
+                  <span className="font-medium">{member.name}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 flex justify-end sticky bottom-0 bg-white pt-2 border-t">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg mr-2"
+          >
+            Hủy
+          </button>
+          <button
+            onClick={() => selectedMember && onTransfer(selectedMember._id)}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            disabled={!selectedMember}
+          >
+            Chuyển quyền
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 function MessagePage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -101,6 +166,9 @@ function MessagePage() {
 
   // Thêm state để theo dõi pending reactions
   const [pendingReactions, setPendingReactions] = useState({});
+
+  // Thêm state cho modal chuyển quyền trưởng nhóm
+  const [showTransferOwnershipModal, setShowTransferOwnershipModal] = useState(false);
 
   const scrollToBottom = (behavior = 'auto') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -1612,6 +1680,7 @@ function MessagePage() {
   const MembersModal = () => {
     const [friends, setFriends] = useState([]);
     const [selectedMembers, setSelectedMembers] = useState([]);
+    const [activeTab, setActiveTab] = useState('list'); // Add this line
 
     // Add kick member handler
     const handleKickMember = (memberId) => {
@@ -1670,8 +1739,8 @@ function MessagePage() {
     };
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto relative">
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
+        <div className="bg-white rounded-lg p-6 w-[500px] max-h-[80vh] flex flex-col">
           <div className="flex justify-between items-center mb-4 sticky top-0 bg-white pb-2 border-b">
             <h2 className="text-xl font-semibold">Thành viên nhóm</h2>
             <button
@@ -1683,80 +1752,104 @@ function MessagePage() {
             </button>
           </div>
 
-          <div className="mb-6">
-            <h3 className="font-medium mb-2">Thành viên hiện tại:</h3>
-            <div className="space-y-2">
-              {dataUser.members.map((member) => (
-                <div key={member._id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <img
-                      src={member.profile_pic}
-                      alt={member.name}
-                      className="w-10 h-10 rounded-full"
-                    />
-                    <div className="flex flex-col">
-                      <span className="font-medium">{member.name}</span>
-                      {member._id === dataUser.creator._id && (
-                        <span className="text-xs text-blue-600">(Người tạo nhóm)</span>
-                      )}
-                    </div>
-                  </div>
-                  {/* Show kick button only if current user is admin and target is not admin or self */}
-                  {dataUser.creator._id === user._id && 
-                   member._id !== user._id && 
-                   member._id !== dataUser.creator._id && (
-                    <button
-                      onClick={() => handleKickMember(member._id)}
-                      className="text-red-500 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-colors"
-                      title="Xóa khỏi nhóm"
-                    >
-                      <MdPersonRemove size={20} />
-                    </button>
-                  )}
-                </div>
-              ))}
+          <div className="flex-1 overflow-y-auto">
+            {/* Tab buttons */}
+            <div className="flex gap-2 mb-4">
+              <button
+                className={`px-4 py-2 rounded-lg ${
+                  activeTab === 'list'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                onClick={() => setActiveTab('list')}
+              >
+                Danh sách thành viên
+              </button>
+              <button
+                className={`px-4 py-2 rounded-lg ${
+                  activeTab === 'add'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                onClick={() => setActiveTab('add')}
+              >
+                Thêm thành viên
+              </button>
             </div>
-          </div>
 
-          {dataUser.creator._id === user._id && (
-            <>
-              <div className="border-t pt-4">
-                <h3 className="font-medium mb-2">Thêm thành viên:</h3>
+            {/* Tab content */}
+            {activeTab === 'list' ? (
+              <div className="space-y-2">
+                {dataUser.members.map((member) => (
+                  <div key={member._id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={member.profile_pic}
+                        alt={member.name}
+                        className="w-10 h-10 rounded-full"
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-medium">{member.name}</span>
+                        {member._id === dataUser.creator._id && (
+                          <span className="text-xs text-blue-600">(Trưởng nhóm)</span>
+                        )}
+                      </div>
+                    </div>
+                    {/* Show kick button only if current user is admin and target is not admin or self */}
+                    {dataUser.creator._id === user._id && 
+                     member._id !== user._id && 
+                     member._id !== dataUser.creator._id && (
+                      <button
+                        onClick={() => handleKickMember(member._id)}
+                        className="text-red-500 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-colors"
+                        title="Xóa khỏi nhóm"
+                      >
+                        <MdPersonRemove size={20} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-4">
                 <div className="space-y-2">
                   {friends.map((friend) => (
                     <div
                       key={friend._id}
-                      className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded-lg cursor-pointer"
+                      className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg cursor-pointer"
                       onClick={() => handleSelectMember(friend)}
                     >
-                      <input
-                        type="checkbox"
-                        checked={selectedMembers.some(member => member._id === friend._id)}
-                        onChange={() => {}}
-                        className="w-4 h-4"
-                      />
-                      <img
-                        src={friend.profile_pic}
-                        alt={friend.name}
-                        className="w-10 h-10 rounded-full"
-                      />
-                      <span className="font-medium">{friend.name}</span>
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={friend.profile_pic}
+                          alt={friend.name}
+                          className="w-10 h-10 rounded-full"
+                        />
+                        <span className="font-medium">{friend.name}</span>
+                      </div>
+                      {selectedMembers.some(member => member._id === friend._id) && (
+                        <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                          <span className="text-white text-sm">✓</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
-              </div>
 
-              <div className="mt-4 flex justify-end sticky bottom-0 bg-white pt-2 border-t">
                 <button
                   onClick={() => handleAddMembers(selectedMembers)}
-                  className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                   disabled={selectedMembers.length === 0}
+                  className={`w-full py-2 rounded-lg ${
+                    selectedMembers.length === 0
+                      ? 'bg-gray-300 cursor-not-allowed'
+                      : 'bg-blue-500 hover:bg-blue-600 text-white'
+                  }`}
                 >
                   Thêm thành viên
                 </button>
               </div>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </div>
     );
@@ -2484,6 +2577,41 @@ function MessagePage() {
     }
   }, [socketConnection, params.groupId]);
 
+  // Thêm hàm xử lý chuyển quyền trưởng nhóm (gửi socket event)
+  const handleTransferOwnership = (newOwnerId) => {
+    if (!socketConnection || !params.groupId || !user._id) return;
+
+    if (window.confirm("Bạn có chắc chắn muốn chuyển quyền trưởng nhóm cho người này không?")) {
+      socketConnection.emit("transfer-group-ownership", {
+        groupId: params.groupId,
+        currentOwnerId: user._id,
+        newOwnerId: newOwnerId
+      });
+    }
+    setShowTransferOwnershipModal(false);
+  };
+
+  // Thêm socket listener cho kết quả chuyển quyền
+  useEffect(() => {
+    if (!socketConnection) return;
+
+    socketConnection.on("transfer-ownership-success", (data) => {
+      toast.success(data.message || "Đã chuyển quyền trưởng nhóm thành công");
+      // Cập nhật lại thông tin nhóm sau khi chuyển quyền
+      socketConnection.emit("get-group-info", params.groupId);
+      // Có thể cần cập nhật thêm state local dataUser.creator nếu cần
+    });
+
+    socketConnection.on("transfer-ownership-error", (data) => {
+      toast.error(data.message || "Không thể chuyển quyền trưởng nhóm");
+    });
+
+    return () => {
+      socketConnection.off("transfer-ownership-success");
+      socketConnection.off("transfer-ownership-error");
+    };
+  }, [socketConnection, params.groupId]);
+
   return (
     <div className="flex flex-col h-full w-full min-w-0 flex-1">
       <ToastContainer />
@@ -2584,16 +2712,16 @@ function MessagePage() {
                       <FaUsers size={20} />
                       <span>Xem thành viên</span>
                     </button>
-                    {/* Chỉ hiển thị nút xóa nhóm cho quản trị viên */}
-                    {dataUser?.creator?._id === user._id ? (
+                    {params.groupId && dataUser?.creator?._id === user._id && (
                       <button
-                        onClick={handleDeleteGroup}
-                        className="w-full px-4 py-3 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2 transition-colors duration-200"
+                        onClick={() => { setShowTransferOwnershipModal(true); setShowOptions(false); }}
+                        className="w-full px-4 py-3 text-left text-sm hover:bg-gray-100 flex items-center gap-2 transition-colors duration-200"
                       >
-                        <MdDelete size={20} />
-                        <span>Xóa nhóm</span>
+                        <FaUsers size={20} />
+                        <span>Chuyển quyền trưởng nhóm</span>
                       </button>
-                    ) : (
+                    )}
+                    {params.groupId && dataUser?.creator?._id !== user._id && (
                       <button
                         onClick={handleLeaveGroup}
                         className="w-full px-4 py-3 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2 transition-colors duration-200"
@@ -2602,11 +2730,20 @@ function MessagePage() {
                         <span>Rời nhóm</span>
                       </button>
                     )}
+                    {params.groupId && dataUser?.creator?._id === user._id && (
+                       <button
+                         onClick={handleDeleteGroup}
+                         className="w-full px-4 py-3 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2 transition-colors duration-200"
+                       >
+                         <MdDelete size={20} />
+                         <span>Xóa nhóm</span>
+                       </button>
+                    )}
                   </>
                 )}
                 {!params.groupId && friendRequestStatus.isFriend && (
                   <button
-                    onMouseDown={handleUnfriend}
+                    onClick={handleUnfriend}
                     className="w-full px-4 py-3 text-left text-sm text-red-500 hover:bg-gray-100 flex items-center gap-2 transition-colors duration-200"
                   >
                     <MdPersonRemove size={20} />
@@ -3155,6 +3292,16 @@ function MessagePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal chuyển quyền trưởng nhóm (MỚI) */}
+      {showTransferOwnershipModal && dataUser?.members && dataUser?.creator && (
+         <TransferOwnershipModal
+            group={dataUser}
+            members={dataUser.members} // Truyền danh sách thành viên
+            onClose={() => setShowTransferOwnershipModal(false)}
+            onTransfer={handleTransferOwnership} // Truyền hàm xử lý chuyển quyền
+         />
       )}
 
       {showMembersModal && <MembersModal />}
