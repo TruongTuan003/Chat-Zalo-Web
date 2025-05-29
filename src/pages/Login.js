@@ -29,6 +29,8 @@ const Login = () => {
   const validatePassword = (password) => {
     if (!password) {
       return "Vui lòng nhập mật khẩu";
+    } else if (password.length < 6) {
+      return "Mật khẩu phải có ít nhất 6 ký tự";
     }
     return "";
   };
@@ -36,14 +38,14 @@ const Login = () => {
   const handlePhoneChange = (e) => {
     const value = e.target.value;
     // Only allow numbers
-    const numericValue = value.replace(/[^0-9]/g, '');
+    const numericValue = value.replace(/[^0-9]/g, "");
     setPhone(numericValue);
-    
+
     // Clear error when user starts typing
     if (errors.phone) {
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        phone: ""
+        phone: "",
       }));
     }
   };
@@ -51,12 +53,12 @@ const Login = () => {
   const handlePasswordChange = (e) => {
     const value = e.target.value;
     setPassword(value);
-    
+
     // Clear error when user starts typing
     if (errors.password) {
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        password: ""
+        password: "",
       }));
     }
   };
@@ -135,7 +137,11 @@ const Login = () => {
 
         {/* Phone Input */}
         <div className="flex flex-col mb-4">
-          <div className={`flex items-center border ${errors.phone ? 'border-red-500' : 'border-gray-300'} rounded px-3 py-2`}>
+          <div
+            className={`flex items-center border ${
+              errors.phone ? "border-red-500" : "border-gray-300"
+            } rounded px-3 py-2`}
+          >
             <span className="text-gray-500 mr-2">📱 +84</span>
             <span className="text-gray-500 mr-2">•</span>
             <input
@@ -154,7 +160,11 @@ const Login = () => {
 
         {/* Password Input */}
         <div className="flex flex-col mb-4">
-          <div className={`flex items-center border ${errors.password ? 'border-red-500' : 'border-gray-300'} rounded px-3 py-2`}>
+          <div
+            className={`flex items-center border ${
+              errors.password ? "border-red-500" : "border-gray-300"
+            } rounded px-3 py-2`}
+          >
             <span className="text-gray-500 mr-2">🔒</span>
             <input
               type="password"
