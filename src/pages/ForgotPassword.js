@@ -4,19 +4,22 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import firebase from "../firebase"; // giống file RegisterPage
 import { TbUserCircle } from "react-icons/tb";
+import { FaEye, FaEyeSlash } from "react-icons/fa";
 
 function ForgotPasswordPage() {
   const [step, setStep] = useState("checkPhone");
-  const [data, setData] = useState({ 
-    phone: "", 
+  const [data, setData] = useState({
+    phone: "",
     newPassword: "",
-    confirmPassword: ""
+    confirmPassword: "",
   });
   const [otp, setOtp] = useState("");
   const [token, setToken] = useState("");
   const [timeLeft, setTimeLeft] = useState(0);
   const [isOtpExpired, setIsOtpExpired] = useState(false);
   const [isResending, setIsResending] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
   const [errors, setErrors] = useState({});
 
@@ -27,7 +30,6 @@ function ForgotPasswordPage() {
     );
   }, []);
 
-  // Timer effect for OTP countdown
   useEffect(() => {
     let timer;
     if (timeLeft > 0) {
@@ -45,41 +47,40 @@ function ForgotPasswordPage() {
     return () => clearInterval(timer);
   }, [timeLeft]);
 
-  // Format time as MM:SS
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, "0")}:${secs
+      .toString()
+      .padStart(2, "0")}`;
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    // Chỉ cho phép nhập số cho trường phone
     if (name === "phone") {
-      const numericValue = value.replace(/[^0-9]/g, '');
-      setData(prev => ({ ...prev, [name]: numericValue }));
+      const numericValue = value.replace(/[^0-9]/g, "");
+      setData((prev) => ({ ...prev, [name]: numericValue }));
     } else {
-      setData(prev => ({ ...prev, [name]: value }));
+      setData((prev) => ({ ...prev, [name]: value }));
     }
-    
-    // Validate ngay khi người dùng nhập
+
     if (name === "newPassword") {
       const passwordError = validatePassword(value);
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        password: passwordError
+        password: passwordError,
       }));
     } else if (name === "confirmPassword") {
       const confirmPasswordError = validateConfirmPassword(value);
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        confirmPassword: confirmPasswordError
+        confirmPassword: confirmPasswordError,
       }));
     } else if (name === "phone") {
       const phoneError = validatePhone(value);
-      setErrors(prev => ({
+      setErrors((prev) => ({
         ...prev,
-        phone: phoneError
+        phone: phoneError,
       }));
     }
   };
@@ -147,14 +148,14 @@ function ForgotPasswordPage() {
       );
 
       if (res.data.success) {
-        setToken(res.data.token); // lưu token reset mật khẩu
+        setToken(res.data.token);
         const appVerifier = window.recaptchaVerifier;
         const confirmationResult = await firebase
           .auth()
           .signInWithPhoneNumber(phone, appVerifier);
         window.confirmationResult = confirmationResult;
         setStep("verifyOtp");
-        setTimeLeft(30); // Set 30 seconds timeout
+        setTimeLeft(30);
         setIsOtpExpired(false);
         toast.success("Mã OTP đã được gửi đến số điện thoại của bạn");
       }
@@ -162,7 +163,10 @@ function ForgotPasswordPage() {
       if (err.response?.status === 404) {
         toast.error("Số điện thoại không tồn tại");
       } else {
-        toast.error(err?.response?.data?.message || "Không thể gửi mã OTP. Vui lòng thử lại sau.");
+        toast.error(
+          err?.response?.data?.message ||
+            "Không thể gửi mã OTP. Vui lòng thử lại sau."
+        );
       }
     }
   };
@@ -170,19 +174,19 @@ function ForgotPasswordPage() {
   const handleResendOTP = async () => {
     if (isResending) return;
     setIsResending(true);
-    
+
     try {
       const phone = data.phone.startsWith("+84")
         ? data.phone
         : data.phone.replace(/^0/, "+84");
-      
+
       const appVerifier = window.recaptchaVerifier;
       const confirmationResult = await firebase
         .auth()
         .signInWithPhoneNumber(phone, appVerifier);
-      
+
       window.confirmationResult = confirmationResult;
-      setTimeLeft(30); // Reset timer to 30 seconds
+      setTimeLeft(30);
       setIsOtpExpired(false);
       toast.success("Đã gửi lại mã OTP thành công!");
     } catch (error) {
@@ -225,7 +229,6 @@ function ForgotPasswordPage() {
         password: passwordError,
         confirmPassword: confirmPasswordError,
       });
-      // Focus vào trường có lỗi đầu tiên
       if (passwordError) {
         document.querySelector('input[name="newPassword"]').focus();
       } else if (confirmPasswordError) {
@@ -338,10 +341,10 @@ function ForgotPasswordPage() {
 
         {step === "resetPassword" && (
           <form onSubmit={handlePasswordSubmit} className="grid gap-4">
-            <label className="text-sm font-medium">
+            <label className="text-sm font-medium relative">
               Mật khẩu mới:
               <input
-                type="password"
+                type={showNewPassword ? "text" : "password"}
                 name="newPassword"
                 value={data.newPassword}
                 onChange={handleChange}
@@ -350,14 +353,25 @@ function ForgotPasswordPage() {
                   errors.password ? "border-red-500" : ""
                 }`}
               />
+              <button
+                type="button"
+                className="absolute right-3 top-9 text-gray-500"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+              >
+                {showNewPassword ? (
+                  <FaEyeSlash size={18} />
+                ) : (
+                  <FaEye size={18} />
+                )}
+              </button>
               {errors.password && (
                 <p className="text-red-500 text-sm mt-1">{errors.password}</p>
               )}
             </label>
-            <label className="text-sm font-medium">
+            <label className="text-sm font-medium relative">
               Xác nhận mật khẩu:
               <input
-                type="password"
+                type={showConfirmPassword ? "text" : "password"}
                 name="confirmPassword"
                 value={data.confirmPassword}
                 onChange={handleChange}
@@ -366,8 +380,21 @@ function ForgotPasswordPage() {
                   errors.confirmPassword ? "border-red-500" : ""
                 }`}
               />
+              <button
+                type="button"
+                className="absolute right-3 top-9 text-gray-500"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              >
+                {showConfirmPassword ? (
+                  <FaEyeSlash size={18} />
+                ) : (
+                  <FaEye size={18} />
+                )}
+              </button>
               {errors.confirmPassword && (
-                <p className="text-red-500 text-sm mt-1">{errors.confirmPassword}</p>
+                <p className="text-red-500 text-sm mt-1">
+                  {errors.confirmPassword}
+                </p>
               )}
             </label>
             <button

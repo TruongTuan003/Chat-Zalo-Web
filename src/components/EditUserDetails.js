@@ -6,7 +6,14 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { useDispatch } from "react-redux";
 import { setUser } from "../redux/userSlice";
-import { FaPencilAlt, FaTimes, FaCamera, FaLock } from "react-icons/fa";
+import {
+  FaPencilAlt,
+  FaTimes,
+  FaCamera,
+  FaLock,
+  FaEye,
+  FaEyeSlash,
+} from "react-icons/fa";
 
 const EditUserDetails = ({ onClose, user }) => {
   const [data, setData] = useState({
@@ -23,6 +30,9 @@ const EditUserDetails = ({ onClose, user }) => {
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [passwordErrors, setPasswordErrors] = useState({});
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const uploadPhotoRef = useRef();
   const dispatch = useDispatch();
 
@@ -41,16 +51,12 @@ const EditUserDetails = ({ onClose, user }) => {
     }
   }, [user]);
 
-  console.log("user edit", user);
-
   const handleOnChange = (e) => {
     const { name, value } = e.target;
-    setData((preve) => {
-      return {
-        ...preve,
-        [name]: value,
-      };
-    });
+    setData((preve) => ({
+      ...preve,
+      [name]: value,
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -58,24 +64,19 @@ const EditUserDetails = ({ onClose, user }) => {
     e.stopPropagation();
     try {
       const URL = `${process.env.REACT_APP_BACKEND}/api/update-user`;
-
-      // Only send necessary user data fields
       const userData = {
         name: data.name,
         profile_pic: data.profile_pic,
         _id: data._id,
         phone: data.phone,
       };
-
       const response = await axios({
         method: "post",
         url: URL,
         data: userData,
         withCredentials: true,
       });
-
       toast.success(response?.data?.message || "User updated successfully!");
-
       if (response.data.success) {
         dispatch(setUser(response.data.data));
       }
@@ -88,7 +89,6 @@ const EditUserDetails = ({ onClose, user }) => {
   const handleOpenUploadPhoto = (e) => {
     e.preventDefault();
     e.stopPropagation();
-
     uploadPhotoRef.current.click();
   };
 
@@ -96,12 +96,10 @@ const EditUserDetails = ({ onClose, user }) => {
     const file = e.target.files[0];
     if (file) {
       const uploadPhoto = await uploadFile(file);
-      setData((preve) => {
-        return {
-          ...preve,
-          profile_pic: uploadPhoto?.url,
-        };
-      });
+      setData((preve) => ({
+        ...preve,
+        profile_pic: uploadPhoto?.url,
+      }));
     }
   };
 
@@ -135,8 +133,6 @@ const EditUserDetails = ({ onClose, user }) => {
       ...prev,
       [name]: value,
     }));
-
-    // Validate on change
     if (name === "newPassword") {
       const error = validatePassword(value);
       setPasswordErrors((prev) => ({
@@ -154,14 +150,10 @@ const EditUserDetails = ({ onClose, user }) => {
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
-
-    // Validate all fields
     const newPasswordError = validatePassword(passwordData.newPassword);
     const confirmPasswordError = validateConfirmPassword(
       passwordData.confirmPassword
     );
-
-    // Kiểm tra mật khẩu mới có trùng với mật khẩu cũ không
     if (passwordData.newPassword === passwordData.currentPassword) {
       setPasswordErrors((prev) => ({
         ...prev,
@@ -169,7 +161,6 @@ const EditUserDetails = ({ onClose, user }) => {
       }));
       return;
     }
-
     if (newPasswordError || confirmPasswordError) {
       setPasswordErrors({
         newPassword: newPasswordError,
@@ -177,7 +168,6 @@ const EditUserDetails = ({ onClose, user }) => {
       });
       return;
     }
-
     try {
       const URL = `${process.env.REACT_APP_BACKEND}/api/change-password`;
       const response = await axios.post(
@@ -190,7 +180,6 @@ const EditUserDetails = ({ onClose, user }) => {
           withCredentials: true,
         }
       );
-
       if (response.data.success) {
         toast.success("Đổi mật khẩu thành công");
         setPasswordData({
@@ -209,7 +198,6 @@ const EditUserDetails = ({ onClose, user }) => {
     }
   };
 
-  console.log("data", data.phone);
   return (
     <div className="fixed top-0 bottom-0 left-0 right-0 bg-gray-700 bg-opacity-40 flex justify-center items-center z-50">
       <div className="bg-white rounded-lg overflow-hidden shadow-xl w-full max-w-md">
@@ -313,26 +301,37 @@ const EditUserDetails = ({ onClose, user }) => {
 
             {showPasswordForm && (
               <form onSubmit={handlePasswordSubmit} className="mt-4 space-y-4">
-                <div>
+                <div className="relative">
                   <label className="block text-sm font-medium text-gray-700">
                     Mật khẩu hiện tại
                   </label>
                   <input
-                    type="password"
+                    type={showCurrentPassword ? "text" : "password"}
                     name="currentPassword"
                     value={passwordData.currentPassword}
                     onChange={handlePasswordChange}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
                     required
                   />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-9 text-gray-500"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  >
+                    {showCurrentPassword ? (
+                      <FaEyeSlash size={18} />
+                    ) : (
+                      <FaEye size={18} />
+                    )}
+                  </button>
                 </div>
 
-                <div>
+                <div className="relative">
                   <label className="block text-sm font-medium text-gray-700">
                     Mật khẩu mới
                   </label>
                   <input
-                    type="password"
+                    type={showNewPassword ? "text" : "password"}
                     name="newPassword"
                     value={passwordData.newPassword}
                     onChange={handlePasswordChange}
@@ -343,6 +342,17 @@ const EditUserDetails = ({ onClose, user }) => {
                     } rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary`}
                     required
                   />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-9 text-gray-500"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                  >
+                    {showNewPassword ? (
+                      <FaEyeSlash size={18} />
+                    ) : (
+                      <FaEye size={18} />
+                    )}
+                  </button>
                   {passwordErrors.newPassword && (
                     <p className="mt-1 text-sm text-red-600">
                       {passwordErrors.newPassword}
@@ -350,12 +360,12 @@ const EditUserDetails = ({ onClose, user }) => {
                   )}
                 </div>
 
-                <div>
+                <div className="relative">
                   <label className="block text-sm font-medium text-gray-700">
                     Xác nhận mật khẩu mới
                   </label>
                   <input
-                    type="password"
+                    type={showConfirmPassword ? "text" : "password"}
                     name="confirmPassword"
                     value={passwordData.confirmPassword}
                     onChange={handlePasswordChange}
@@ -366,6 +376,17 @@ const EditUserDetails = ({ onClose, user }) => {
                     } rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary`}
                     required
                   />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-9 text-gray-500"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    {showConfirmPassword ? (
+                      <FaEyeSlash size={18} />
+                    ) : (
+                      <FaEye size={18} />
+                    )}
+                  </button>
                   {passwordErrors.confirmPassword && (
                     <p className="mt-1 text-sm text-red-600">
                       {passwordErrors.confirmPassword}
