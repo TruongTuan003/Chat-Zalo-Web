@@ -6,7 +6,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 import { useDispatch } from "react-redux";
 import { setUser } from "../redux/userSlice";
-import { FaPencilAlt, FaTimes, FaCamera } from "react-icons/fa";
+import { FaPencilAlt, FaTimes, FaCamera, FaLock } from "react-icons/fa";
 
 const EditUserDetails = ({ onClose, user }) => {
   const [data, setData] = useState({
@@ -14,8 +14,15 @@ const EditUserDetails = ({ onClose, user }) => {
     profile_pic: user?.profile_pic,
     phone: user?.phone,
   });
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
   const [isEditingName, setIsEditingName] = useState(false);
   const [isEditingPhone, setIsEditingPhone] = useState(false);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [passwordErrors, setPasswordErrors] = useState({});
   const uploadPhotoRef = useRef();
   const dispatch = useDispatch();
 
@@ -97,6 +104,96 @@ const EditUserDetails = ({ onClose, user }) => {
       });
     }
   };
+
+  const validatePassword = (password) => {
+    if (!password) {
+      return "Vui lòng nhập mật khẩu";
+    } else if (password.length < 6) {
+      return "Mật khẩu phải có ít nhất 6 ký tự";
+    } else if (!/[A-Z]/.test(password)) {
+      return "Mật khẩu phải chứa ít nhất một chữ in hoa";
+    } else if (!/[a-z]/.test(password)) {
+      return "Mật khẩu phải chứa ít nhất một chữ thường";
+    } else if (!/[0-9]/.test(password)) {
+      return "Mật khẩu phải chứa ít nhất một chữ số";
+    }
+    return "";
+  };
+
+  const validateConfirmPassword = (confirmPassword) => {
+    if (!confirmPassword) {
+      return "Vui lòng xác nhận mật khẩu";
+    } else if (confirmPassword !== passwordData.newPassword) {
+      return "Mật khẩu xác nhận không khớp";
+    }
+    return "";
+  };
+
+  const handlePasswordChange = (e) => {
+    const { name, value } = e.target;
+    setPasswordData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+
+    // Validate on change
+    if (name === "newPassword") {
+      const error = validatePassword(value);
+      setPasswordErrors(prev => ({
+        ...prev,
+        newPassword: error
+      }));
+    } else if (name === "confirmPassword") {
+      const error = validateConfirmPassword(value);
+      setPasswordErrors(prev => ({
+        ...prev,
+        confirmPassword: error
+      }));
+    }
+  };
+
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Validate all fields
+    const newPasswordError = validatePassword(passwordData.newPassword);
+    const confirmPasswordError = validateConfirmPassword(passwordData.confirmPassword);
+    
+    if (newPasswordError || confirmPasswordError) {
+      setPasswordErrors({
+        newPassword: newPasswordError,
+        confirmPassword: confirmPasswordError
+      });
+      return;
+    }
+
+    try {
+      const URL = `${process.env.REACT_APP_BACKEND}/api/change-password`;
+      const response = await axios.post(URL, {
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword
+      }, {
+        withCredentials: true
+      });
+
+      if (response.data.success) {
+        toast.success("Đổi mật khẩu thành công");
+        setPasswordData({
+          currentPassword: "",
+          newPassword: "",
+          confirmPassword: ""
+        });
+        setShowPasswordForm(false);
+      }
+    } catch (error) {
+      if (error.response?.status === 401) {
+        toast.error("Mật khẩu hiện tại không đúng");
+      } else {
+        toast.error(error?.response?.data?.message || "Không thể đổi mật khẩu");
+      }
+    }
+  };
+
   console.log("data", data.phone);
   return (
     <div className="fixed top-0 bottom-0 left-0 right-0 bg-gray-700 bg-opacity-40 flex justify-center items-center z-50">
@@ -190,7 +287,81 @@ const EditUserDetails = ({ onClose, user }) => {
 
           <Diveder />
 
-          <div className="flex justify-center p-4">
+          <div className="p-4">
+            <button
+              onClick={() => setShowPasswordForm(!showPasswordForm)}
+              className="flex items-center gap-2 text-primary hover:text-secondary"
+            >
+              <FaLock size={14} />
+              {showPasswordForm ? "Đóng" : "Đổi mật khẩu"}
+            </button>
+
+            {showPasswordForm && (
+              <form onSubmit={handlePasswordSubmit} className="mt-4 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Mật khẩu hiện tại
+                  </label>
+                  <input
+                    type="password"
+                    name="currentPassword"
+                    value={passwordData.currentPassword}
+                    onChange={handlePasswordChange}
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Mật khẩu mới
+                  </label>
+                  <input
+                    type="password"
+                    name="newPassword"
+                    value={passwordData.newPassword}
+                    onChange={handlePasswordChange}
+                    className={`mt-1 block w-full px-3 py-2 border ${
+                      passwordErrors.newPassword ? "border-red-500" : "border-gray-300"
+                    } rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary`}
+                    required
+                  />
+                  {passwordErrors.newPassword && (
+                    <p className="mt-1 text-sm text-red-600">{passwordErrors.newPassword}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Xác nhận mật khẩu mới
+                  </label>
+                  <input
+                    type="password"
+                    name="confirmPassword"
+                    value={passwordData.confirmPassword}
+                    onChange={handlePasswordChange}
+                    className={`mt-1 block w-full px-3 py-2 border ${
+                      passwordErrors.confirmPassword ? "border-red-500" : "border-gray-300"
+                    } rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary`}
+                    required
+                  />
+                  {passwordErrors.confirmPassword && (
+                    <p className="mt-1 text-sm text-red-600">{passwordErrors.confirmPassword}</p>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-primary text-white px-4 py-2 rounded-md hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={!!passwordErrors.newPassword || !!passwordErrors.confirmPassword}
+                >
+                  Đổi mật khẩu
+                </button>
+              </form>
+            )}
+          </div>
+
+          <div className="p-4 flex justify-end">
             <button
               onClick={handleSubmit}
               className="bg-primary text-white px-6 py-2 rounded-md hover:bg-secondary"
