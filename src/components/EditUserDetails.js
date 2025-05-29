@@ -131,57 +131,72 @@ const EditUserDetails = ({ onClose, user }) => {
 
   const handlePasswordChange = (e) => {
     const { name, value } = e.target;
-    setPasswordData(prev => ({
+    setPasswordData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
 
     // Validate on change
     if (name === "newPassword") {
       const error = validatePassword(value);
-      setPasswordErrors(prev => ({
+      setPasswordErrors((prev) => ({
         ...prev,
-        newPassword: error
+        newPassword: error,
       }));
     } else if (name === "confirmPassword") {
       const error = validateConfirmPassword(value);
-      setPasswordErrors(prev => ({
+      setPasswordErrors((prev) => ({
         ...prev,
-        confirmPassword: error
+        confirmPassword: error,
       }));
     }
   };
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
-    
+
     // Validate all fields
     const newPasswordError = validatePassword(passwordData.newPassword);
-    const confirmPasswordError = validateConfirmPassword(passwordData.confirmPassword);
-    
+    const confirmPasswordError = validateConfirmPassword(
+      passwordData.confirmPassword
+    );
+
+    // Kiểm tra mật khẩu mới có trùng với mật khẩu cũ không
+    if (passwordData.newPassword === passwordData.currentPassword) {
+      setPasswordErrors((prev) => ({
+        ...prev,
+        newPassword: "Mật khẩu mới không được trùng với mật khẩu cũ",
+      }));
+      return;
+    }
+
     if (newPasswordError || confirmPasswordError) {
       setPasswordErrors({
         newPassword: newPasswordError,
-        confirmPassword: confirmPasswordError
+        confirmPassword: confirmPasswordError,
       });
       return;
     }
 
     try {
       const URL = `${process.env.REACT_APP_BACKEND}/api/change-password`;
-      const response = await axios.post(URL, {
-        currentPassword: passwordData.currentPassword,
-        newPassword: passwordData.newPassword
-      }, {
-        withCredentials: true
-      });
+      const response = await axios.post(
+        URL,
+        {
+          currentPassword: passwordData.currentPassword,
+          newPassword: passwordData.newPassword,
+        },
+        {
+          withCredentials: true,
+        }
+      );
 
       if (response.data.success) {
         toast.success("Đổi mật khẩu thành công");
         setPasswordData({
           currentPassword: "",
           newPassword: "",
-          confirmPassword: ""
+          confirmPassword: "",
         });
         setShowPasswordForm(false);
       }
@@ -322,12 +337,16 @@ const EditUserDetails = ({ onClose, user }) => {
                     value={passwordData.newPassword}
                     onChange={handlePasswordChange}
                     className={`mt-1 block w-full px-3 py-2 border ${
-                      passwordErrors.newPassword ? "border-red-500" : "border-gray-300"
+                      passwordErrors.newPassword
+                        ? "border-red-500"
+                        : "border-gray-300"
                     } rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary`}
                     required
                   />
                   {passwordErrors.newPassword && (
-                    <p className="mt-1 text-sm text-red-600">{passwordErrors.newPassword}</p>
+                    <p className="mt-1 text-sm text-red-600">
+                      {passwordErrors.newPassword}
+                    </p>
                   )}
                 </div>
 
@@ -341,19 +360,26 @@ const EditUserDetails = ({ onClose, user }) => {
                     value={passwordData.confirmPassword}
                     onChange={handlePasswordChange}
                     className={`mt-1 block w-full px-3 py-2 border ${
-                      passwordErrors.confirmPassword ? "border-red-500" : "border-gray-300"
+                      passwordErrors.confirmPassword
+                        ? "border-red-500"
+                        : "border-gray-300"
                     } rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary`}
                     required
                   />
                   {passwordErrors.confirmPassword && (
-                    <p className="mt-1 text-sm text-red-600">{passwordErrors.confirmPassword}</p>
+                    <p className="mt-1 text-sm text-red-600">
+                      {passwordErrors.confirmPassword}
+                    </p>
                   )}
                 </div>
 
                 <button
                   type="submit"
                   className="w-full bg-primary text-white px-4 py-2 rounded-md hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={!!passwordErrors.newPassword || !!passwordErrors.confirmPassword}
+                  disabled={
+                    !!passwordErrors.newPassword ||
+                    !!passwordErrors.confirmPassword
+                  }
                 >
                   Đổi mật khẩu
                 </button>
