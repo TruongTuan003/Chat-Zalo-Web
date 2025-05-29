@@ -168,7 +168,7 @@ const EditUserDetails = ({ onClose, user }) => {
     }
 
     try {
-      const URL = `${process.env.REACT_APP_BACKEND}/api/reset-password`;
+      const URL = `${process.env.REACT_APP_BACKEND}/api/change-password`;
       const response = await axios.post(URL, {
         currentPassword: passwordData.currentPassword,
         newPassword: passwordData.newPassword
